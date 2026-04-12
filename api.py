@@ -14,7 +14,7 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
-    allow_credentials=True,  # ДОБАВЛЕНО
+    allow_credentials=True,
 )
 
 class TapAction(BaseModel):
@@ -169,6 +169,7 @@ async def process_tap(tap_data: TapAction):
         "success": True,
         "new_leaves": player['leaves'],
         "new_energy": player['energy'],
+        "total_taps": player['total_taps'],  # ← ДОБАВЛЕНО
         "gain": gain
     }
 
