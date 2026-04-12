@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse  # ДОБАВИТЬ ЭТУ СТРОКУ
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import sqlite3
 import json
@@ -8,11 +8,13 @@ from datetime import datetime
 
 app = FastAPI(title="Koala Quest API")
 
+# ===== ОБНОВЛЁННЫЙ CORS =====
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_credentials=True,  # ДОБАВЛЕНО
 )
 
 class TapAction(BaseModel):
@@ -101,12 +103,17 @@ def save_player(player_data: dict):
     conn.commit()
     conn.close()
 
-# ========== НОВЫЙ ЭНДПОИНТ: ОТДАЁТ ИГРУ ==========
+# ========== НОВЫЙ ОБРАБОТЧИК OPTIONS ДЛЯ TELEGRAM ==========
+@app.options("/{path:path}")
+async def options_handler(path: str):
+    return {"status": "ok"}
+
+# ========== ЭНДПОИНТ: ОТДАЁТ ИГРУ ==========
 @app.get("/")
 async def serve_index():
     return FileResponse("index.html")
 
-# ========== ОСТАЛЬНЫЕ ЭНДПОИНТЫ БЕЗ ИЗМЕНЕНИЙ ==========
+# ========== ОСТАЛЬНЫЕ ЭНДПОИНТЫ ==========
 @app.post("/api/player/register")
 async def register_player(user_id: int, name: str):
     if get_player(user_id):
