@@ -285,7 +285,7 @@
         return null;
     }
 
-    // === НОВАЯ ФУНКЦИЯ: Отправка данных на сервер ===
+    // === ИСПРАВЛЕННАЯ ФУНКЦИЯ: Отправка данных на сервер ===
     async function syncToServer() {
         try {
             const response = await fetch(`${API_URL}/tap`, {
@@ -293,11 +293,17 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
                     user_id: player.id, 
-                    taps_count: player.totalTaps
+                    taps_count: 1
                 })
             });
             if (response.ok) {
+                const data = await response.json();
                 console.log('✅ Данные синхронизированы с сервером');
+                // Обновляем локальные данные из ответа сервера
+                player.leaves = data.new_leaves;
+                player.energy = data.new_energy;
+                player.totalTaps = data.total_taps;
+                updateUI();
             }
         } catch (error) {
             console.log('⚠️ Ошибка синхронизации');
