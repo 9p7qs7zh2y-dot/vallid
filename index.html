@@ -269,6 +269,52 @@
 
     // ==================== API ДЛЯ БАЗЫ ДАННЫХ ====================
     const API_URL = '/api';
+    const tg = window.Telegram.WebApp;
+    tg.expand();
+    tg.ready();
+
+    // === ОТПРАВКА ДАННЫХ ЧЕРЕЗ TELEGRAM ===
+    function syncToServer() {
+        if (tg && tg.sendData) {
+            try {
+                const data = {
+                    action: 'tap',
+                    taps_count: 1
+                };
+                tg.sendData(JSON.stringify(data));
+                console.log('✅ Данные отправлены через Telegram');
+            } catch (error) {
+                console.log('⚠️ Ошибка отправки через Telegram');
+                syncToServerFetch();
+            }
+        } else {
+            syncToServerFetch();
+        }
+    }
+    
+    // === РЕЗЕРВНАЯ ОТПРАТКА ЧЕРЕЗ FETCH (для браузера) ===
+    async function syncToServerFetch() {
+        try {
+            const response = await fetch(`${API_URL}/tap`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    user_id: player.id, 
+                    taps_count: 1
+                })
+            });
+            if (response.ok) {
+                const data = await response.json();
+                console.log('✅ Данные синхронизированы через fetch');
+                player.leaves = data.new_leaves;
+                player.energy = data.new_energy;
+                player.totalTaps = data.total_taps;
+                updateUI();
+            }
+        } catch (error) {
+            console.log('⚠️ Ошибка синхронизации');
+        }
+    }
 
     // === НОВАЯ ФУНКЦИЯ: Загрузка данных с сервера ===
     async function loadFromServer() {
@@ -285,31 +331,6 @@
         return null;
     }
 
-    // === ИСПРАВЛЕННАЯ ФУНКЦИЯ: Отправка данных на сервер ===
-    async function syncToServer() {
-        try {
-            const response = await fetch(`${API_URL}/tap`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    user_id: player.id, 
-                    taps_count: 1
-                })
-            });
-            if (response.ok) {
-                const data = await response.json();
-                console.log('✅ Данные синхронизированы с сервером');
-                // Обновляем локальные данные из ответа сервера
-                player.leaves = data.new_leaves;
-                player.energy = data.new_energy;
-                player.totalTaps = data.total_taps;
-                updateUI();
-            }
-        } catch (error) {
-            console.log('⚠️ Ошибка синхронизации');
-        }
-    }
-
     // === НОВАЯ ФУНКЦИЯ: Полная синхронизация всех данных ===
     async function syncFullPlayerData() {
         try {
@@ -319,7 +340,6 @@
             });
             if (response.ok) {
                 const serverData = await response.json();
-                // Обновляем локальные данные из сервера
                 player.leaves = serverData.leaves;
                 player.stars = serverData.stars;
                 player.level = serverData.level;
@@ -361,7 +381,6 @@
 
     // === НОВАЯ ФУНКЦИЯ: Загрузка игры (с сервера) ===
     async function loadGame() {
-        // Загружаем с сервера
         const serverData = await loadFromServer();
         
         if (serverData) {
@@ -369,7 +388,6 @@
             player.lastEnergyUpdate = Date.now();
             console.log('✅ Игра загружена с сервера');
         } else {
-            // Резерв: загружаем из localStorage
             const saved = localStorage.getItem(`koala_quest_${player.id}`);
             if (saved) {
                 const data = JSON.parse(saved);
@@ -383,15 +401,10 @@
         updateLeaderboard();
         updateUI();
         
-        // Регистрируемся на сервере
         await registerOnServer(player.id, player.name);
     }
 
     // ==================== ИНИЦИАЛИЗАЦИЯ ИГРЫ ====================
-    const tg = window.Telegram.WebApp;
-    tg.expand();
-    tg.ready();
-    
     let player = {
         id: tg.initDataUnsafe?.user?.id || Math.floor(Math.random() * 1000000),
         name: tg.initDataUnsafe?.user?.first_name || "KoalaMaster",
@@ -410,7 +423,7 @@
         rewards: { 1: { leaves: 1000, stars: 10, title: "ЧЕМПИОН ТУРНИРА" }, 2: { leaves: 500, stars: 5, title: "СЕРЕБРЯНЫЙ ПРИЗЁР" }, 3: { leaves: 300, stars: 3, title: "БРОНЗОВЫЙ ПРИЗЁР" }, "top10": { leaves: 100, stars: 1, title: "ТОП-10" }, "participant": { leaves: 50, stars: 0, title: "УЧАСТНИК" } }
     };
     
-    // === Функции игры (остаются без изменений, но с добавлением syncToServer) ===
+    // === Функции игры ===
     function loadTournamentData() { const saved = localStorage.getItem(`koala_tournament_${player.id}`); if(saved){ const d=JSON.parse(saved); tournament.todayAttempts=d.todayAttempts||0; tournament.lastAttemptDate=d.lastAttemptDate; tournament.myTaps=d.myTaps||0; } loadTournamentLeaderboard(); }
     function saveTournamentData() { localStorage.setItem(`koala_tournament_${player.id}`, JSON.stringify({ todayAttempts: tournament.todayAttempts, lastAttemptDate: tournament.lastAttemptDate, myTaps: tournament.myTaps })); }
     function loadTournamentLeaderboard() { const all = localStorage.getItem('koala_tournament_all'); if(all) tournament.participants = JSON.parse(all); else tournament.participants = [{ id:999001,name:"Тапатель",taps:245,avatar:"🏅"},{ id:999002,name:"Скорость",taps:198,avatar:"⚡"},{ id:999003,name:"Король",taps:167,avatar:"👑"}]; const existing = tournament.participants.find(p=>p.id==player.id); if(existing){ existing.taps=tournament.myTaps; existing.name=player.name; }else if(tournament.myTaps>0) tournament.participants.push({id:player.id,name:player.name,taps:tournament.myTaps,avatar:"🐨"}); tournament.participants.sort((a,b)=>b.taps-a.taps); saveTournamentLeaderboard(); }
@@ -456,7 +469,6 @@
         if(player.totalTaps>=100 && !player.dailyTasks.tap100) checkTask('tap100'); 
         if(player.totalTaps>=1000 && !player.challenges.totalTaps1000) checkChallenge('totalTaps1000');
         
-        // Отправляем данные на сервер
         syncToServer();
     }
     
@@ -513,8 +525,6 @@
     (async () => {
         await loadGame();
         updateUI();
-        tg.expand();
-        tg.ready();
         updateProgress();
     })();
 </script>
