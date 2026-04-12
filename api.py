@@ -8,11 +8,11 @@ from datetime import datetime
 
 app = FastAPI(title="Koala Quest API")
 
-# ===== ОБНОВЛЁННЫЙ CORS ДЛЯ TELEGRAM (ДОБАВЛЕНЫ ЗАГОЛОВКИ) =====
+# ===== ОБНОВЛЁННЫЙ CORS ДЛЯ TELEGRAM =====
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_origins_regex=r".*",
+    allow_origin_regex=r".*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
