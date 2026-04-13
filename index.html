@@ -272,36 +272,42 @@
     tg.expand();
     tg.ready();
     
-    // ==================== ПОЛУЧАЕМ ДАННЫЕ ПОЛЬЗОВАТЕЛЯ ИЗ TELEGRAM ====================
-    const user = tg.initDataUnsafe?.user;
-    const userId = user?.id;
-    const userName = user?.first_name;
+    // ==================== ПОЛУЧАЕМ ДАННЫЕ ПОЛЬЗОВАТЕЛЯ ИЗ TELEGRAM ==================== 
+const user = tg.initDataUnsafe?.user;
+const userId = user?.id;
+const userName = user?.first_name;
+
+// Если данные из Telegram не получены (например, при тестировании в браузере)
+if (!userId) {
+    console.warn('⚠️ Telegram данные не получены, используются тестовые значения');
+}
+
+console.log('✅ Telegram пользователь:', userId, userName);
+
+// ⭐⭐⭐ ПРИНУДИТЕЛЬНОЕ ИМЯ ДЛЯ ВАШЕГО ID ⭐⭐⭐
+let finalName = userName || "Игрок";
+if (userId === 201883) {
+    finalName = "Vadim";
+}
     
-    // Если данные из Telegram не получены (например, при тестировании в браузере)
-    if (!userId) {
-        console.warn('⚠️ Telegram данные не получены, используются тестовые значения');
-    }
-    
-    console.log('✅ Telegram пользователь:', userId, userName);
-    
-    // ==================== ИНИЦИАЛИЗАЦИЯ ИГРЫ ====================
-    let player = {
-        id: userId || Math.floor(Math.random() * 1000000),
-        name: userName || "Игрок",
-        level: 1, exp: 0, expToNext: 100, leaves: 500, stars: 0, tapPower: 1,
-        energy: 100, maxEnergy: 100, lastEnergyUpdate: Date.now(), totalLeaves: 0, totalTaps: 0,
-        battlesWon: 0, dailyStreak: 1, lastDailyClaim: null, hasPremium: false,
-        invitesLeft: Infinity, refEarnings: 0, friends: [],
-        boosts: { doubleTap: { active: false, endTime: 0 }, energyBoost: { active: false, endTime: 0 }, autoTap: { active: false, endTime: 0 } },
-        dailyTasks: { tap50: false, tap100: false, inviteFriend: false, tournamentWin: false },
-        challenges: { level5: false, level10: false, totalTaps1000: false, tournamentChampion: false }
-    };
-    
-    let tournament = {
-        active: false, startTime: null, endTime: null, duration: 60, myTaps: 0, participants: [],
-        todayAttempts: 0, maxAttemptsPerDay: 3, lastAttemptDate: null,
-        rewards: { 1: { leaves: 1000, stars: 10, title: "ЧЕМПИОН ТУРНИРА" }, 2: { leaves: 500, stars: 5, title: "СЕРЕБРЯНЫЙ ПРИЗЁР" }, 3: { leaves: 300, stars: 3, title: "БРОНЗОВЫЙ ПРИЗЁР" }, "top10": { leaves: 100, stars: 1, title: "ТОП-10" }, "participant": { leaves: 50, stars: 0, title: "УЧАСТНИК" } }
-    };
+// ==================== ИНИЦИАЛИЗАЦИЯ ИГРЫ ====================
+let player = {
+    id: userId || Math.floor(Math.random() * 1000000),
+    name: finalName,  // ← ИЗМЕНИТЬ: было userName, стало finalName
+    level: 1, exp: 0, expToNext: 100, leaves: 500, stars: 0, tapPower: 1,
+    energy: 100, maxEnergy: 100, lastEnergyUpdate: Date.now(), totalLeaves: 0, totalTaps: 0,
+    battlesWon: 0, dailyStreak: 1, lastDailyClaim: null, hasPremium: false,
+    invitesLeft: Infinity, refEarnings: 0, friends: [],
+    boosts: { doubleTap: { active: false, endTime: 0 }, energyBoost: { active: false, endTime: 0 }, autoTap: { active: false, endTime: 0 } },
+    dailyTasks: { tap50: false, tap100: false, inviteFriend: false, tournamentWin: false },
+    challenges: { level5: false, level10: false, totalTaps1000: false, tournamentChampion: false }
+};
+
+let tournament = {
+    active: false, startTime: null, endTime: null, duration: 60, myTaps: 0, participants: [],
+    todayAttempts: 0, maxAttemptsPerDay: 3, lastAttemptDate: null,
+    rewards: { 1: { leaves: 1000, stars: 10, title: "ЧЕМПИОН ТУРНИРА" }, 2: { leaves: 500, stars: 5, title: "СЕРЕБРЯНЫЙ ПРИЗЁР" }, 3: { leaves: 300, stars: 3, title: "БРОНЗОВЫЙ ПРИЗЁР" }, "top10": { leaves: 100, stars: 1, title: "ТОП-10" }, "participant": { leaves: 50, stars: 0, title: "УЧАСТНИК" } }
+};
     
     // === ФУНКЦИИ ДЛЯ РАБОТЫ С API ===
     async function saveToAPI() {
