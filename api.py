@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse  # ← ДОБАВИТЬ ЭТУ СТРОКУ
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from typing import Optional
 import sqlite3
 from datetime import datetime
 
@@ -26,8 +27,8 @@ class PlayerSaveData(BaseModel):
     boosts: dict
     daily_tasks: dict
     challenges: dict
-    last_daily_claim: str = None
-    last_energy_update: str = None
+    last_daily_claim: Optional[str] = None  # ← ИСПРАВЛЕНО!
+    last_energy_update: Optional[str] = None  # ← ТОЖЕ ИСПРАВЛЕНО!
 
 def init_db():
     conn = sqlite3.connect('koala_quest.db')
@@ -63,7 +64,6 @@ def save_player(data: PlayerSaveData):
 
 init_db()
 
-# ⭐⭐⭐ ИСПРАВЛЕННЫЙ КОРНЕВОЙ МАРШРУТ - ТЕПЕРЬ ВОЗВРАЩАЕТ ИГРУ ⭐⭐⭐
 @app.get("/")
 async def serve_game():
     return FileResponse("index.html")
