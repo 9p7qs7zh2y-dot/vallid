@@ -277,7 +277,6 @@
     const userId = user?.id;
     const userName = user?.first_name;
     
-    // Если данные из Telegram не получены (например, при тестировании в браузере)
     if (!userId) {
         console.warn('⚠️ Telegram данные не получены, используются тестовые значения');
     }
@@ -317,7 +316,7 @@
                     level: player.level,
                     exp: player.exp,
                     tap_power: player.tapPower,
-                    energy: player.energy,
+                    energy: Math.floor(player.energy),
                     max_energy: player.maxEnergy,
                     has_premium: player.hasPremium,
                     daily_streak: player.dailyStreak,
@@ -399,7 +398,7 @@
     function updateEnergy(){ const now=Date.now(); const secondsPassed=Math.floor((now-player.lastEnergyUpdate)/1000); let regenRate=0.5; if(player.boosts.energyBoost.active && now<player.boosts.energyBoost.endTime) regenRate=1; if(player.hasPremium) regenRate*=2; player.energy=Math.min(player.maxEnergy,player.energy+secondsPassed*regenRate); player.lastEnergyUpdate=now; const percent=(player.energy/player.maxEnergy)*100; document.getElementById('energyFill').style.width=`${percent}%`; document.getElementById('energyText').innerHTML=`${Math.floor(player.energy)}/${player.maxEnergy}`; }
     function createTapEffect(x,y,value){ const e=document.createElement('div'); e.className='tap-effect-number'; e.innerHTML=`+${value} 🍃`; e.style.left=(x-20)+'px'; e.style.top=(y-30)+'px'; document.body.appendChild(e); setTimeout(()=>e.remove(),600); }
     
-    // === ГЛАВНАЯ ФУНКЦИЯ TAP ===
+    // === ГЛАВНАЯ ФУНКЦИЯ TAP (с отправкой данных боту) ===
     function tap(){ 
         if(player.energy<1){ 
             tg.showPopup({title:"😴 Коала устала!",message:"Нужна энергия",buttons:[{type:"ok"}]}); 
@@ -425,7 +424,31 @@
         if(player.totalTaps>=100 && !player.dailyTasks.tap100) checkTask('tap100'); 
         if(player.totalTaps>=1000 && !player.challenges.totalTaps1000) checkChallenge('totalTaps1000');
         
-        // ⭐⭐⭐ СОХРАНЯЕМ ДАННЫЕ В API ⭐⭐⭐
+        // ⭐⭐⭐ ОТПРАВЛЯЕМ ДАННЫЕ БОТУ ⭐⭐⭐
+        if (tg && tg.sendData) {
+            tg.sendData(JSON.stringify({
+                action: 'save_all',
+                leaves: player.leaves,
+                stars: player.stars,
+                level: player.level,
+                exp: player.exp,
+                tap_power: player.tapPower,
+                energy: Math.floor(player.energy),
+                max_energy: player.maxEnergy,
+                has_premium: player.hasPremium,
+                daily_streak: player.dailyStreak,
+                total_taps: player.totalTaps,
+                total_leaves: player.totalLeaves,
+                battles_won: player.battlesWon,
+                boosts: player.boosts,
+                daily_tasks: player.dailyTasks,
+                challenges: player.challenges,
+                last_daily_claim: player.lastDailyClaim,
+                last_energy_update: new Date().toISOString()
+            }));
+        }
+        
+        // Сохраняем в API
         saveToAPI();
         
         // Сохраняем локально (резерв)
