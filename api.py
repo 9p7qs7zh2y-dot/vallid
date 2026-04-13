@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse  # ← ДОБАВИТЬ ЭТУ СТРОКУ
 from pydantic import BaseModel
 import sqlite3
 from datetime import datetime
@@ -62,9 +63,10 @@ def save_player(data: PlayerSaveData):
 
 init_db()
 
+# ⭐⭐⭐ ИСПРАВЛЕННЫЙ КОРНЕВОЙ МАРШРУТ ⭐⭐⭐
 @app.get("/")
-async def root():
-    return {"status": "Koala Quest API"}
+async def serve_index():
+    return FileResponse("index.html")
 
 @app.post("/api/player/save")
 async def save_player_endpoint(data: PlayerSaveData):
