@@ -83,10 +83,7 @@ def save_player(data: PlayerSaveData):
 
 init_db()
 
-@app.get("/")
-async def serve_game():
-    return FileResponse("index.html")
-
+# ========== СНАЧАЛА API ЭНДПОИНТЫ ==========
 @app.post("/api/player/save")
 async def save_player_endpoint(data: PlayerSaveData):
     save_player(data)
@@ -120,3 +117,8 @@ async def load_player_endpoint(user_id: int):
         "daily_tasks": eval(row[15]) if row[15] else {},
         "challenges": eval(row[16]) if row[16] else {}
     }
+
+# ========== ПОТОМ ИГРА (В КОНЦЕ) ==========
+@app.get("/")
+async def serve_game():
+    return FileResponse("index.html")
