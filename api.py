@@ -1,29 +1,12 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import sqlite3
-import json
 from datetime import datetime
 
-app = FastAPI(title="Koala Quest API")
+app = FastAPI()
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# CORS настройки
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_origin_regex=r".*",
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["*"],
-)
-
-@app.head("/")
-async def head_root():
-    return {"status": "ok"}
-
-# Модель для сохранения данных (ПОЛНОСТЬЮ СОВПАДАЕТ С ИГРОЙ)
 class PlayerSaveData(BaseModel):
     user_id: int
     name: str
@@ -45,161 +28,60 @@ class PlayerSaveData(BaseModel):
     last_daily_claim: str = None
     last_energy_update: str = None
 
-# ===== БАЗА ДАННЫХ =====
-DB_PATH = "koala_quest.db"
-
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS players (
+    conn = sqlite3.connect('koala_quest.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS players (
         user_id INTEGER PRIMARY KEY,
-        name TEXT NOT NULL,
-        level INTEGER DEFAULT 1,
-        exp INTEGER DEFAULT 0,
-        leaves REAL DEFAULT 500,
-        stars INTEGER DEFAULT 0,
-        tap_power REAL DEFAULT 1,
-        energy INTEGER DEFAULT 100,
-        max_energy INTEGER DEFAULT 100,
-        has_premium BOOLEAN DEFAULT 0,
-        daily_streak INTEGER DEFAULT 1,
-        total_taps INTEGER DEFAULT 0,
-        total_leaves REAL DEFAULT 0,
-        battles_won INTEGER DEFAULT 0,
-        boosts TEXT DEFAULT '{}',
-        daily_tasks TEXT DEFAULT '{}',
-        challenges TEXT DEFAULT '{}',
-        last_daily_claim TEXT,
-        last_energy_update TEXT
-    )
-    ''')
+        name TEXT, leaves REAL, stars INTEGER, level INTEGER,
+        exp INTEGER, tap_power REAL, energy INTEGER, max_energy INTEGER,
+        has_premium INTEGER, daily_streak INTEGER, total_taps INTEGER,
+        total_leaves REAL, battles_won INTEGER, boosts TEXT,
+        daily_tasks TEXT, challenges TEXT, last_daily_claim TEXT,
+        last_energy_update TEXT, updated_at TIMESTAMP)''')
     conn.commit()
     conn.close()
-    print("✅ База данных SQLite создана")
+    print("✅ База данных готова")
 
-def get_player(user_id: int):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM players WHERE user_id = ?', (user_id,))
-    row = cursor.fetchone()
-    conn.close()
-    if not row:
-        return None
-    return {
-        'user_id': row[0],
-        'name': row[1],
-        'level': row[2],
-        'exp': row[3],
-        'leaves': row[4],
-        'stars': row[5],
-        'tap_power': row[6],
-        'energy': row[7],
-        'max_energy': row[8],
-        'has_premium': bool(row[9]),
-        'daily_streak': row[10],
-        'total_taps': row[11],
-        'total_leaves': row[12],
-        'battles_won': row[13],
-        'boosts': json.loads(row[14]) if row[14] else {},
-        'daily_tasks': json.loads(row[15]) if row[15] else {},
-        'challenges': json.loads(row[16]) if row[16] else {},
-        'last_daily_claim': row[17],
-        'last_energy_update': row[18]
-    }
-
-def save_player(player_data: dict):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('''
-    INSERT OR REPLACE INTO players (
-        user_id, name, level, exp, leaves, stars, tap_power,
-        energy, max_energy, has_premium, daily_streak, total_taps,
-        total_leaves, battles_won, boosts, daily_tasks, challenges, 
-        last_daily_claim, last_energy_update
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (
-        player_data['user_id'], player_data['name'], player_data['level'],
-        player_data['exp'], player_data['leaves'], player_data['stars'],
-        player_data['tap_power'], player_data['energy'], player_data['max_energy'],
-        1 if player_data['has_premium'] else 0, player_data['daily_streak'],
-        player_data['total_taps'], player_data['total_leaves'], player_data['battles_won'],
-        json.dumps(player_data['boosts']), json.dumps(player_data['daily_tasks']),
-        json.dumps(player_data['challenges']), 
-        player_data.get('last_daily_claim'), player_data.get('last_energy_update')
-    ))
+def save_player(data: PlayerSaveData):
+    conn = sqlite3.connect('koala_quest.db')
+    c = conn.cursor()
+    c.execute('''INSERT OR REPLACE INTO players 
+        (user_id, name, leaves, stars, level, exp, tap_power, energy, max_energy,
+         has_premium, daily_streak, total_taps, total_leaves, battles_won, boosts,
+         daily_tasks, challenges, last_daily_claim, last_energy_update, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+        (data.user_id, data.name, data.leaves, data.stars, data.level, data.exp,
+         data.tap_power, data.energy, data.max_energy, 1 if data.has_premium else 0,
+         data.daily_streak, data.total_taps, data.total_leaves, data.battles_won,
+         str(data.boosts), str(data.daily_tasks), str(data.challenges),
+         data.last_daily_claim, data.last_energy_update, datetime.now()))
     conn.commit()
     conn.close()
-    print(f"💾 Сохранён игрок {player_data['user_id']}: {player_data['leaves']}🍃, {player_data['energy']}⚡")
-
-# ========== ЭНДПОИНТЫ ==========
-@app.get("/")
-async def serve_index():
-    return FileResponse("index.html")
-
-@app.post("/api/player/register")
-async def register_player(user_id: int, name: str):
-    if get_player(user_id):
-        return {"status": "exists"}
-    new_player = {
-        'user_id': user_id,
-        'name': name,
-        'level': 1,
-        'exp': 0,
-        'leaves': 500,
-        'stars': 0,
-        'tap_power': 1,
-        'energy': 100,
-        'max_energy': 100,
-        'has_premium': False,
-        'daily_streak': 1,
-        'total_taps': 0,
-        'total_leaves': 0,
-        'battles_won': 0,
-        'boosts': {},
-        'daily_tasks': {},
-        'challenges': {},
-        'last_daily_claim': None,
-        'last_energy_update': datetime.now().isoformat()
-    }
-    save_player(new_player)
-    return {"status": "success", "player": new_player}
-
-@app.get("/api/player/{user_id}")
-async def get_player_data(user_id: int):
-    player = get_player(user_id)
-    if not player:
-        raise HTTPException(status_code=404, detail="Player not found")
-    return player
-
-@app.post("/api/player/save")
-async def save_player_data(data: PlayerSaveData):
-    player_data = {
-        'user_id': data.user_id,
-        'name': data.name,
-        'level': data.level,
-        'exp': data.exp,
-        'leaves': data.leaves,
-        'stars': data.stars,
-        'tap_power': data.tap_power,
-        'energy': data.energy,
-        'max_energy': data.max_energy,
-        'has_premium': data.has_premium,
-        'daily_streak': data.daily_streak,
-        'total_taps': data.total_taps,
-        'total_leaves': data.total_leaves,
-        'battles_won': data.battles_won,
-        'boosts': data.boosts,
-        'daily_tasks': data.daily_tasks,
-        'challenges': data.challenges,
-        'last_daily_claim': data.last_daily_claim,
-        'last_energy_update': data.last_energy_update or datetime.now().isoformat()
-    }
-    save_player(player_data)
-    return {"success": True, "message": "Данные сохранены"}
+    print(f"💾 Игрок {data.user_id} сохранён")
 
 init_db()
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+@app.get("/")
+async def root():
+    return {"status": "Koala Quest API"}
+
+@app.post("/api/player/save")
+async def save_player_endpoint(data: PlayerSaveData):
+    save_player(data)
+    return {"success": True}
+
+@app.get("/api/player/{user_id}")
+async def load_player_endpoint(user_id: int):
+    conn = sqlite3.connect('koala_quest.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM players WHERE user_id = ?", (user_id,))
+    row = c.fetchone()
+    conn.close()
+    if not row:
+        return {"leaves": 500, "stars": 0, "level": 1, "energy": 100}
+    return {"user_id": row[0], "name": row[1], "leaves": row[2], "stars": row[3],
+            "level": row[4], "exp": row[5], "tap_power": row[6], "energy": row[7],
+            "max_energy": row[8], "has_premium": bool(row[9]), "daily_streak": row[10],
+            "total_taps": row[11], "total_leaves": row[12], "battles_won": row[13],
+            "boosts": eval(row[14]), "daily_tasks": eval(row[15]), "challenges": eval(row[16])}
