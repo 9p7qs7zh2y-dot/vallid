@@ -8,7 +8,7 @@ from datetime import datetime
 
 app = FastAPI(title="Koala Quest API")
 
-# ===== ОБНОВЛЁННЫЙ CORS ДЛЯ TELEGRAM =====
+# CORS настройки
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,11 +19,11 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
-class TapAction(BaseModel):
-    user_id: int
-    taps_count: int
+@app.head("/")
+async def head_root():
+    return {"status": "ok"}
 
-# МОДЕЛЬ ДЛЯ СОХРАНЕНИЯ ВСЕХ ДАННЫХ
+# Модель для сохранения данных (ПОЛНОСТЬЮ СОВПАДАЕТ С ИГРОЙ)
 class PlayerSaveData(BaseModel):
     user_id: int
     name: str
@@ -132,17 +132,11 @@ def save_player(player_data: dict):
     conn.close()
     print(f"💾 Сохранён игрок {player_data['user_id']}: {player_data['leaves']}🍃, {player_data['energy']}⚡")
 
-# ========== ОБРАБОТЧИК OPTIONS ==========
-@app.options("/{path:path}")
-async def options_handler(path: str):
-    return {"status": "ok"}
-
-# ========== ЭНДПОИНТ: ОТДАЁТ ИГРУ ==========
+# ========== ЭНДПОИНТЫ ==========
 @app.get("/")
 async def serve_index():
     return FileResponse("index.html")
 
-# ========== ЭНДПОИНТЫ API ==========
 @app.post("/api/player/register")
 async def register_player(user_id: int, name: str):
     if get_player(user_id):
@@ -178,7 +172,6 @@ async def get_player_data(user_id: int):
         raise HTTPException(status_code=404, detail="Player not found")
     return player
 
-# ⭐ ГЛАВНЫЙ ЭНДПОИНТ: СОХРАНЕНИЕ ВСЕХ ДАННЫХ (энергия приходит из игры)
 @app.post("/api/player/save")
 async def save_player_data(data: PlayerSaveData):
     player_data = {
@@ -189,7 +182,7 @@ async def save_player_data(data: PlayerSaveData):
         'leaves': data.leaves,
         'stars': data.stars,
         'tap_power': data.tap_power,
-        'energy': data.energy,           # ← энергия приходит из игры (какая есть)
+        'energy': data.energy,
         'max_energy': data.max_energy,
         'has_premium': data.has_premium,
         'daily_streak': data.daily_streak,
@@ -204,47 +197,6 @@ async def save_player_data(data: PlayerSaveData):
     }
     save_player(player_data)
     return {"success": True, "message": "Данные сохранены"}
-
-# ЭНДПОИНТ ДЛЯ ТАПОВ (только начисление листьев, энергия не меняется)
-@app.post("/api/tap")
-async def process_tap(tap_data: TapAction):
-    player = get_player(tap_data.user_id)
-    if not player:
-        raise HTTPException(status_code=404, detail="Player not found")
-    
-    gain = player['tap_power']
-    if player['has_premium']:
-        gain *= 2
-    
-    # Меняем только листья и тапы
-    player['leaves'] += gain * tap_data.taps_count
-    player['total_taps'] += tap_data.taps_count
-    player['total_leaves'] += gain * tap_data.taps_count
-    # ⭐ Энергию НЕ ТРОГАЕМ - она остаётся как была
-    
-    save_player(player)
-    
-    return {
-        "success": True,
-        "new_leaves": player['leaves'],
-        "new_energy": player['energy'],  # возвращаем текущую энергию (без изменений)
-        "total_taps": player['total_taps'],
-        "gain": gain
-    }
-
-@app.get("/api/leaderboard")
-async def get_leaderboard(limit: int = 50):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('''
-    SELECT user_id, name, level, total_taps, total_leaves
-    FROM players
-    ORDER BY level DESC, total_taps DESC
-    LIMIT ?
-    ''', (limit,))
-    rows = cursor.fetchall()
-    conn.close()
-    return [{'user_id': r[0], 'name': r[1], 'level': r[2], 'total_taps': r[3], 'total_leaves': r[4]} for r in rows]
 
 init_db()
 
