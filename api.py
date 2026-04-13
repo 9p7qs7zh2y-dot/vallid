@@ -17,7 +17,7 @@ class PlayerSaveData(BaseModel):
     level: int
     exp: int
     tap_power: float
-    energy: int
+    energy: float  # ← ИЗМЕНЕНО: int → float
     max_energy: int
     has_premium: bool
     daily_streak: int
@@ -36,7 +36,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS players (
         user_id INTEGER PRIMARY KEY,
         name TEXT, leaves REAL, stars INTEGER, level INTEGER,
-        exp INTEGER, tap_power REAL, energy INTEGER, max_energy INTEGER,
+        exp INTEGER, tap_power REAL, energy REAL, max_energy INTEGER,  # ← energy REAL
         has_premium INTEGER, daily_streak INTEGER, total_taps INTEGER,
         total_leaves REAL, battles_won INTEGER, boosts TEXT,
         daily_tasks TEXT, challenges TEXT, last_daily_claim TEXT,
