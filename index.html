@@ -272,10 +272,22 @@
     tg.expand();
     tg.ready();
     
+    // ==================== ПОЛУЧАЕМ ДАННЫЕ ПОЛЬЗОВАТЕЛЯ ИЗ TELEGRAM ====================
+    const user = tg.initDataUnsafe?.user;
+    const userId = user?.id;
+    const userName = user?.first_name;
+    
+    // Если данные из Telegram не получены (например, при тестировании в браузере)
+    if (!userId) {
+        console.warn('⚠️ Telegram данные не получены, используются тестовые значения');
+    }
+    
+    console.log('✅ Telegram пользователь:', userId, userName);
+    
     // ==================== ИНИЦИАЛИЗАЦИЯ ИГРЫ ====================
     let player = {
-        id: tg.initDataUnsafe?.user?.id || Math.floor(Math.random() * 1000000),
-        name: tg.initDataUnsafe?.user?.first_name || "KoalaMaster",
+        id: userId || Math.floor(Math.random() * 1000000),
+        name: userName || "Игрок",
         level: 1, exp: 0, expToNext: 100, leaves: 500, stars: 0, tapPower: 1,
         energy: 100, maxEnergy: 100, lastEnergyUpdate: Date.now(), totalLeaves: 0, totalTaps: 0,
         battlesWon: 0, dailyStreak: 1, lastDailyClaim: null, hasPremium: false,
@@ -330,6 +342,10 @@
     }
     
     async function loadFromAPI() {
+        if (!player.id) {
+            console.log('⚠️ Нет ID пользователя');
+            return false;
+        }
         try {
             const response = await fetch(`/api/player/${player.id}`);
             if (response.ok) {
