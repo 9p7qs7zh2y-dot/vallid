@@ -383,7 +383,7 @@
     function updateEnergy(){ const now=Date.now(); const secondsPassed=Math.floor((now-player.lastEnergyUpdate)/1000); let regenRate=0.5; if(player.boosts.energyBoost.active && now<player.boosts.energyBoost.endTime) regenRate=1; if(player.hasPremium) regenRate*=2; player.energy=Math.min(player.maxEnergy,player.energy+secondsPassed*regenRate); player.lastEnergyUpdate=now; const percent=(player.energy/player.maxEnergy)*100; document.getElementById('energyFill').style.width=`${percent}%`; document.getElementById('energyText').innerHTML=`${Math.floor(player.energy)}/${player.maxEnergy}`; }
     function createTapEffect(x,y,value){ const e=document.createElement('div'); e.className='tap-effect-number'; e.innerHTML=`+${value} 🍃`; e.style.left=(x-20)+'px'; e.style.top=(y-30)+'px'; document.body.appendChild(e); setTimeout(()=>e.remove(),600); }
     
-    // === ГЛАВНАЯ ФУНКЦИЯ TAP (с сохранением в API) ===
+    // === ГЛАВНАЯ ФУНКЦИЯ TAP ===
     function tap(){ 
         if(player.energy<1){ 
             tg.showPopup({title:"😴 Коала устала!",message:"Нужна энергия",buttons:[{type:"ok"}]}); 
