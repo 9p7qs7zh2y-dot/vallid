@@ -267,143 +267,11 @@
         }
     }
 
-    // ==================== API ДЛЯ БАЗЫ ДАННЫХ ====================
-    const API_URL = '/api';
+    // ==================== TELEGRAM ====================
     const tg = window.Telegram.WebApp;
     tg.expand();
     tg.ready();
-
-    // === ОТПРАВКА ДАННЫХ ЧЕРЕЗ TELEGRAM ===
-    function syncToServer() {
-        if (tg && tg.sendData) {
-            try {
-                const data = {
-                    action: 'tap',
-                    taps_count: 1
-                };
-                tg.sendData(JSON.stringify(data));
-                console.log('✅ Данные отправлены через Telegram');
-            } catch (error) {
-                console.log('⚠️ Ошибка отправки через Telegram');
-                syncToServerFetch();
-            }
-        } else {
-            syncToServerFetch();
-        }
-    }
     
-    // === РЕЗЕРВНАЯ ОТПРАТКА ЧЕРЕЗ FETCH (для браузера) ===
-    async function syncToServerFetch() {
-        try {
-            const response = await fetch(`${API_URL}/tap`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    user_id: player.id, 
-                    taps_count: 1
-                })
-            });
-            if (response.ok) {
-                const data = await response.json();
-                console.log('✅ Данные синхронизированы через fetch');
-                player.leaves = data.new_leaves;
-                player.energy = data.new_energy;
-                player.totalTaps = data.total_taps;
-                updateUI();
-            }
-        } catch (error) {
-            console.log('⚠️ Ошибка синхронизации');
-        }
-    }
-
-    // === НОВАЯ ФУНКЦИЯ: Загрузка данных с сервера ===
-    async function loadFromServer() {
-        try {
-            const response = await fetch(`${API_URL}/player/${player.id}`);
-            if (response.ok) {
-                const data = await response.json();
-                console.log('✅ Данные загружены с сервера');
-                return data;
-            }
-        } catch (error) {
-            console.log('⚠️ Сервер не доступен, использую localStorage');
-        }
-        return null;
-    }
-
-    // === НОВАЯ ФУНКЦИЯ: Полная синхронизация всех данных ===
-    async function syncFullPlayerData() {
-        try {
-            const response = await fetch(`${API_URL}/player/${player.id}`, {
-                method: 'GET',
-                headers: { 'Content-Type': 'application/json' }
-            });
-            if (response.ok) {
-                const serverData = await response.json();
-                player.leaves = serverData.leaves;
-                player.stars = serverData.stars;
-                player.level = serverData.level;
-                player.exp = serverData.exp;
-                player.totalTaps = serverData.totalTaps;
-                player.totalLeaves = serverData.totalLeaves;
-                player.tapPower = serverData.tapPower;
-                player.energy = serverData.energy;
-                player.maxEnergy = serverData.max_energy;
-                player.hasPremium = serverData.has_premium;
-                player.dailyStreak = serverData.daily_streak;
-                player.battlesWon = serverData.battles_won;
-                if (serverData.boosts) player.boosts = serverData.boosts;
-                if (serverData.daily_tasks) player.dailyTasks = serverData.daily_tasks;
-                if (serverData.challenges) player.challenges = serverData.challenges;
-                
-                updateUI();
-                console.log('✅ Полная синхронизация выполнена');
-            }
-        } catch (error) {
-            console.log('⚠️ Ошибка полной синхронизации');
-        }
-    }
-
-    // === ИЗМЕНЁННАЯ ФУНКЦИЯ: Регистрация на сервере ===
-    async function registerOnServer(userId, userName) {
-        try {
-            const response = await fetch(`${API_URL}/player/register?user_id=${userId}&name=${encodeURIComponent(userName)}`, {
-                method: 'POST'
-            });
-            const data = await response.json();
-            console.log('✅ Зарегистрирован на сервере');
-            return true;
-        } catch (error) {
-            console.log('⚠️ Сервер БД не доступен');
-            return false;
-        }
-    }
-
-    // === НОВАЯ ФУНКЦИЯ: Загрузка игры (с сервера) ===
-    async function loadGame() {
-        const serverData = await loadFromServer();
-        
-        if (serverData) {
-            Object.assign(player, serverData);
-            player.lastEnergyUpdate = Date.now();
-            console.log('✅ Игра загружена с сервера');
-        } else {
-            const saved = localStorage.getItem(`koala_quest_${player.id}`);
-            if (saved) {
-                const data = JSON.parse(saved);
-                Object.assign(player, data);
-                player.lastEnergyUpdate = Date.now();
-                console.log('✅ Игра загружена из localStorage');
-            }
-        }
-        
-        loadTournamentData();
-        updateLeaderboard();
-        updateUI();
-        
-        await registerOnServer(player.id, player.name);
-    }
-
     // ==================== ИНИЦИАЛИЗАЦИЯ ИГРЫ ====================
     let player = {
         id: tg.initDataUnsafe?.user?.id || Math.floor(Math.random() * 1000000),
@@ -443,7 +311,7 @@
     function updateEnergy(){ const now=Date.now(); const secondsPassed=Math.floor((now-player.lastEnergyUpdate)/1000); let regenRate=0.5; if(player.boosts.energyBoost.active && now<player.boosts.energyBoost.endTime) regenRate=1; if(player.hasPremium) regenRate*=2; player.energy=Math.min(player.maxEnergy,player.energy+secondsPassed*regenRate); player.lastEnergyUpdate=now; const percent=(player.energy/player.maxEnergy)*100; document.getElementById('energyFill').style.width=`${percent}%`; document.getElementById('energyText').innerHTML=`${Math.floor(player.energy)}/${player.maxEnergy}`; }
     function createTapEffect(x,y,value){ const e=document.createElement('div'); e.className='tap-effect-number'; e.innerHTML=`+${value} 🍃`; e.style.left=(x-20)+'px'; e.style.top=(y-30)+'px'; document.body.appendChild(e); setTimeout(()=>e.remove(),600); }
     
-    // === ИЗМЕНЁННАЯ ФУНКЦИЯ TAP (с синхронизацией) ===
+    // === ГЛАВНАЯ ФУНКЦИЯ TAP (с отправкой данных боту) ===
     function tap(){ 
         if(player.energy<1){ 
             tg.showPopup({title:"😴 Коала устала!",message:"Нужна энергия",buttons:[{type:"ok"}]}); 
@@ -469,25 +337,45 @@
         if(player.totalTaps>=100 && !player.dailyTasks.tap100) checkTask('tap100'); 
         if(player.totalTaps>=1000 && !player.challenges.totalTaps1000) checkChallenge('totalTaps1000');
         
-        syncToServer();
+        // ⭐⭐⭐ ОТПРАВЛЯЕМ ВСЕ ДАННЫЕ БОТУ ДЛЯ СОХРАНЕНИЯ В БАЗУ ⭐⭐⭐
+        tg.sendData(JSON.stringify({
+            action: 'tap',
+            gain: gain,
+            leaves: player.leaves,
+            total_taps: player.totalTaps
+        }));
+        
+        // Сохраняем локально (резерв)
+        saveGame();
     }
     
     function addExp(amount){ if(player.hasPremium) amount*=2; player.exp+=amount; while(player.exp>=player.expToNext){ player.exp-=player.expToNext; player.level++; player.expToNext=Math.floor(player.expToNext*1.2); if(player.level%10===0) player.tapPower+=0.5; tg.showPopup({title:"🎉 УРОВЕНЬ ПОВЫШЕН!",message:`Уровень ${player.level}! Сила тапа: ${player.tapPower}`,buttons:[{type:"ok"}]}); if(player.level>=5 && !player.challenges.level5) checkChallenge('level5'); if(player.level>=10 && !player.challenges.level10) checkChallenge('level10'); } }
-    function checkTask(taskId){ if(!player.dailyTasks[taskId]){ player.dailyTasks[taskId]=true; let reward={tap50:100,tap100:200,inviteFriend:300,tournamentWin:500}[taskId]; if(player.hasPremium) reward*=2; player.leaves+=reward; tg.showPopup({title:"✅ Задание выполнено!",message:`+${reward} 🍃`,buttons:[{type:"ok"}]}); updateUI(); saveGame(); syncToServer(); } }
-    function checkChallenge(challengeId){ if(!player.challenges[challengeId]){ player.challenges[challengeId]=true; let reward={level5:500,level10:1000,totalTaps1000:500,tournamentChampion:1000}[challengeId]; if(player.hasPremium) reward*=2; player.leaves+=reward; if(challengeId==='tournamentChampion') player.stars+=20; tg.showPopup({title:"🏆 Челлендж завершен!",message:`+${reward} 🍃`,buttons:[{type:"ok"}]}); updateUI(); saveGame(); syncToServer(); } }
-    function claimDaily(){ const today=new Date().toDateString(); if(player.lastDailyClaim===today){ tg.showPopup({title:"Уже получено!",message:"Завтра снова!",buttons:[{type:"ok"}]}); return; } let bonus=100*player.dailyStreak; if(player.hasPremium) bonus*=2; player.leaves+=bonus; player.dailyStreak++; player.lastDailyClaim=today; tg.showPopup({title:"🎁 Ежедневный бонус!",message:`+${bonus} 🍃\nСтрик: ${player.dailyStreak}`,buttons:[{type:"ok"}]}); updateUI(); saveGame(); syncToServer(); }
-    function buyWithLeaves(item,price,callback){ if(player.leaves>=price){ player.leaves-=price; callback(); updateUI(); saveGame(); syncToServer(); return true; }else{ tg.showPopup({title:"Не хватает листьев!",message:`Нужно ${price} 🍃`,buttons:[{type:"ok"}]}); return false; } }
+    function checkTask(taskId){ if(!player.dailyTasks[taskId]){ player.dailyTasks[taskId]=true; let reward={tap50:100,tap100:200,inviteFriend:300,tournamentWin:500}[taskId]; if(player.hasPremium) reward*=2; player.leaves+=reward; tg.showPopup({title:"✅ Задание выполнено!",message:`+${reward} 🍃`,buttons:[{type:"ok"}]}); updateUI(); saveGame(); } }
+    function checkChallenge(challengeId){ if(!player.challenges[challengeId]){ player.challenges[challengeId]=true; let reward={level5:500,level10:1000,totalTaps1000:500,tournamentChampion:1000}[challengeId]; if(player.hasPremium) reward*=2; player.leaves+=reward; if(challengeId==='tournamentChampion') player.stars+=20; tg.showPopup({title:"🏆 Челлендж завершен!",message:`+${reward} 🍃`,buttons:[{type:"ok"}]}); updateUI(); saveGame(); } }
+    function claimDaily(){ const today=new Date().toDateString(); if(player.lastDailyClaim===today){ tg.showPopup({title:"Уже получено!",message:"Завтра снова!",buttons:[{type:"ok"}]}); return; } let bonus=100*player.dailyStreak; if(player.hasPremium) bonus*=2; player.leaves+=bonus; player.dailyStreak++; player.lastDailyClaim=today; tg.showPopup({title:"🎁 Ежедневный бонус!",message:`+${bonus} 🍃\nСтрик: ${player.dailyStreak}`,buttons:[{type:"ok"}]}); updateUI(); saveGame(); }
+    function buyWithLeaves(item,price,callback){ if(player.leaves>=price){ player.leaves-=price; callback(); updateUI(); saveGame(); return true; }else{ tg.showPopup({title:"Не хватает листьев!",message:`Нужно ${price} 🍃`,buttons:[{type:"ok"}]}); return false; } }
     function buyWithStars(item,price,callback){ tg.showPopup({title:"Покупка за Stars",message:`Купить за ${price} ⭐?`,buttons:[{id:"buy",type:"default",text:"Купить"},{id:"cancel",type:"cancel",text:"Отмена"}]},(buttonId)=>{ if(buttonId==="buy"){ tg.showPopup({title:"Оплата",message:"Открывается платёж...",buttons:[{type:"ok"}]}); callback(); } }); }
     function buyEnergy(){ let missingEnergy = player.maxEnergy - player.energy; let price = Math.ceil(missingEnergy * 0.5); if(price <= 0) { tg.showPopup({title:"Энергия полна!",message:"У тебя уже полная энергия",buttons:[{type:"ok"}]}); return; } buyWithLeaves("energy", price, () => { player.energy = player.maxEnergy; updateEnergy(); tg.showPopup({title:"Успех!",message:`Энергия восстановлена за ${price} 🍃!`,buttons:[{type:"ok"}]}); }); }
     function buyTapUpgrade(){ let price=Math.floor(100*player.tapPower); buyWithLeaves("tapUpgrade",price,()=>{ player.tapPower++; tg.showPopup({title:"Улучшение!",message:`Сила тапа +1 (теперь ${player.tapPower})`,buttons:[{type:"ok"}]}); }); }
-    function buyDoubleTapBoost(){ buyWithStars("doubleTap",49,()=>{ player.boosts.doubleTap.active=true; player.boosts.doubleTap.endTime=Date.now()+3600000; updateUI(); syncToServer(); tg.showPopup({title:"Буст активирован!",message:"Двойной тап на 1 час!",buttons:[{type:"ok"}]}); }); }
-    function buyAutoTapBoost(){ buyWithStars("autoTap",99,()=>{ player.boosts.autoTap.active=true; player.boosts.autoTap.endTime=Date.now()+86400000; updateUI(); syncToServer(); tg.showPopup({title:"Буст активирован!",message:"Авто-тап на 24 часа!",buttons:[{type:"ok"}]}); }); }
-    function buyEnergyBoost(){ buyWithStars("energyBoost",79,()=>{ player.boosts.energyBoost.active=true; player.boosts.energyBoost.endTime=Date.now()+43200000; updateUI(); syncToServer(); tg.showPopup({title:"Буст активирован!",message:"Ускоренная регенерация на 12ч",buttons:[{type:"ok"}]}); }); }
-    function buyPremium(){ buyWithStars("premium",299,()=>{ player.hasPremium=true; updateUI(); syncToServer(); tg.showPopup({title:"Премиум активирован!",message:"Двойные награды!",buttons:[{type:"ok"}]}); closePremiumModal(); }); }
+    function buyDoubleTapBoost(){ buyWithStars("doubleTap",49,()=>{ player.boosts.doubleTap.active=true; player.boosts.doubleTap.endTime=Date.now()+3600000; updateUI(); tg.showPopup({title:"Буст активирован!",message:"Двойной тап на 1 час!",buttons:[{type:"ok"}]}); }); }
+    function buyAutoTapBoost(){ buyWithStars("autoTap",99,()=>{ player.boosts.autoTap.active=true; player.boosts.autoTap.endTime=Date.now()+86400000; updateUI(); tg.showPopup({title:"Буст активирован!",message:"Авто-тап на 24 часа!",buttons:[{type:"ok"}]}); }); }
+    function buyEnergyBoost(){ buyWithStars("energyBoost",79,()=>{ player.boosts.energyBoost.active=true; player.boosts.energyBoost.endTime=Date.now()+43200000; updateUI(); tg.showPopup({title:"Буст активирован!",message:"Ускоренная регенерация на 12ч",buttons:[{type:"ok"}]}); }); }
+    function buyPremium(){ buyWithStars("premium",299,()=>{ player.hasPremium=true; updateUI(); tg.showPopup({title:"Премиум активирован!",message:"Двойные награды!",buttons:[{type:"ok"}]}); closePremiumModal(); }); }
     function showPremiumModal(){ document.getElementById('premiumModal').style.display='flex'; }
     function closePremiumModal(){ document.getElementById('premiumModal').style.display='none'; }
     function inviteFriend(){ tg.showPopup({title:"Пригласить друга",message:"Поделись ссылкой с другом!",buttons:[{type:"ok"}]}); }
     function saveGame(){ const saveData={...player}; delete saveData.lastEnergyUpdate; localStorage.setItem(`koala_quest_${player.id}`,JSON.stringify(saveData)); }
+    function loadGame(){ 
+        const saved=localStorage.getItem(`koala_quest_${player.id}`); 
+        if(saved){ 
+            const data=JSON.parse(saved); 
+            Object.assign(player,data); 
+            player.lastEnergyUpdate=Date.now(); 
+        } 
+        loadTournamentData(); 
+        updateLeaderboard(); 
+        updateUI(); 
+    }
     function updateLeaderboard(){ let leaderboard=[{name:"🐨 KoalaKing",level:42,leaves:150000},{name:"🐨 EucalyptusPro",level:38,leaves:98000},{name:"🐨 SleepyMaster",level:35,leaves:87000},{name:player.name,level:player.level,leaves:player.totalLeaves,isMe:true}].sort((a,b)=>b.level-a.level); const listDiv=document.getElementById('leaderboardList'); if(listDiv) listDiv.innerHTML=leaderboard.map((user,idx)=>`<div class="leaderboard-item" style="${user.isMe?'background:rgba(255,215,0,0.25); border-radius:20px;':''}"><div class="rank">${idx+1}</div><div style="flex:1;">${user.name} ${user.isMe?'(Вы)':''}</div><div>🏆 Ур.${user.level}</div></div>`).join(''); }
     function updateUI(){ 
         document.getElementById('username').innerHTML=player.name; document.getElementById('levelText').innerHTML=`LVL ${player.level}`; 
@@ -521,12 +409,10 @@
     document.getElementById('tournamentJoinBtn').addEventListener('click', startTournament);
     window.closePremiumModal=closePremiumModal; window.showPremiumModal=showPremiumModal; window.checkTask=checkTask; window.checkChallenge=checkChallenge; window.buyEnergy=buyEnergy; window.buyTapUpgrade=buyTapUpgrade; window.buyDoubleTapBoost=buyDoubleTapBoost; window.buyAutoTapBoost=buyAutoTapBoost; window.buyEnergyBoost=buyEnergyBoost; window.buyPremium=buyPremium; window.buyWithLeaves=buyWithLeaves;
     
-    // Запуск игры с синхронизацией
-    (async () => {
-        await loadGame();
-        updateUI();
-        updateProgress();
-    })();
+    // Запуск игры
+    loadGame();
+    updateUI();
+    updateProgress();
 </script>
 </body>
 </html>
