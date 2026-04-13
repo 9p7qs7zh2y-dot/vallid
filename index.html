@@ -272,9 +272,6 @@
     tg.expand();
     tg.ready();
     
-    // ==================== API НАСТРОЙКИ ====================
-    const API_URL = '';
-    
     // ==================== ИНИЦИАЛИЗАЦИЯ ИГРЫ ====================
     let player = {
         id: tg.initDataUnsafe?.user?.id || Math.floor(Math.random() * 1000000),
@@ -294,7 +291,7 @@
         rewards: { 1: { leaves: 1000, stars: 10, title: "ЧЕМПИОН ТУРНИРА" }, 2: { leaves: 500, stars: 5, title: "СЕРЕБРЯНЫЙ ПРИЗЁР" }, 3: { leaves: 300, stars: 3, title: "БРОНЗОВЫЙ ПРИЗЁР" }, "top10": { leaves: 100, stars: 1, title: "ТОП-10" }, "participant": { leaves: 50, stars: 0, title: "УЧАСТНИК" } }
     };
     
-    // === API ФУНКЦИИ ===
+    // === ФУНКЦИИ ДЛЯ РАБОТЫ С API ===
     async function saveToAPI() {
         try {
             const response = await fetch('/api/player/save', {
@@ -324,6 +321,8 @@
             });
             if (response.ok) {
                 console.log('✅ Данные сохранены в API');
+            } else {
+                console.log('❌ Ошибка API:', response.status);
             }
         } catch(e) {
             console.log('⚠️ Ошибка сохранения в API:', e);
