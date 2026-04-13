@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse  # ← ДОБАВИТЬ ЭТУ СТРОКУ
 from pydantic import BaseModel
 import sqlite3
 from datetime import datetime
@@ -7,7 +8,6 @@ from datetime import datetime
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# --- ЭТА МОДЕЛЬ ТОЧНО СООТВЕТСТВУЕТ ТОМУ, ЧТО ОТПРАВЛЯЕТ ИГРА ---
 class PlayerSaveData(BaseModel):
     user_id: int
     name: str
@@ -29,7 +29,6 @@ class PlayerSaveData(BaseModel):
     last_daily_claim: str = None
     last_energy_update: str = None
 
-# --- БАЗА ДАННЫХ (ОБНОВЛЕНА) ---
 def init_db():
     conn = sqlite3.connect('koala_quest.db')
     c = conn.cursor()
@@ -64,10 +63,10 @@ def save_player(data: PlayerSaveData):
 
 init_db()
 
-# --- ЭНДПОИНТЫ ---
+# ⭐⭐⭐ ИСПРАВЛЕННЫЙ КОРНЕВОЙ МАРШРУТ - ТЕПЕРЬ ВОЗВРАЩАЕТ ИГРУ ⭐⭐⭐
 @app.get("/")
-async def root():
-    return {"status": "Koala Quest API"}
+async def serve_game():
+    return FileResponse("index.html")
 
 @app.post("/api/player/save")
 async def save_player_endpoint(data: PlayerSaveData):
