@@ -23,7 +23,29 @@ class TapAction(BaseModel):
     user_id: int
     taps_count: int
 
-# ===== ПРОСТОЙ ПУТЬ ДЛЯ БАЗЫ ДАННЫХ =====
+# МОДЕЛЬ ДЛЯ СОХРАНЕНИЯ ВСЕХ ДАННЫХ
+class PlayerSaveData(BaseModel):
+    user_id: int
+    name: str
+    leaves: float
+    stars: int
+    level: int
+    exp: int
+    tap_power: float
+    energy: int
+    max_energy: int
+    has_premium: bool
+    daily_streak: int
+    total_taps: int
+    total_leaves: float
+    battles_won: int
+    boosts: dict
+    daily_tasks: dict
+    challenges: dict
+    last_daily_claim: str = None
+    last_energy_update: str = None
+
+# ===== БАЗА ДАННЫХ =====
 DB_PATH = "koala_quest.db"
 
 def init_db():
@@ -35,7 +57,7 @@ def init_db():
         name TEXT NOT NULL,
         level INTEGER DEFAULT 1,
         exp INTEGER DEFAULT 0,
-        leaves REAL DEFAULT 0,
+        leaves REAL DEFAULT 500,
         stars INTEGER DEFAULT 0,
         tap_power REAL DEFAULT 1,
         energy INTEGER DEFAULT 100,
@@ -48,6 +70,7 @@ def init_db():
         boosts TEXT DEFAULT '{}',
         daily_tasks TEXT DEFAULT '{}',
         challenges TEXT DEFAULT '{}',
+        last_daily_claim TEXT,
         last_energy_update TEXT
     )
     ''')
@@ -81,7 +104,8 @@ def get_player(user_id: int):
         'boosts': json.loads(row[14]) if row[14] else {},
         'daily_tasks': json.loads(row[15]) if row[15] else {},
         'challenges': json.loads(row[16]) if row[16] else {},
-        'last_energy_update': row[17]
+        'last_daily_claim': row[17],
+        'last_energy_update': row[18]
     }
 
 def save_player(player_data: dict):
@@ -91,8 +115,9 @@ def save_player(player_data: dict):
     INSERT OR REPLACE INTO players (
         user_id, name, level, exp, leaves, stars, tap_power,
         energy, max_energy, has_premium, daily_streak, total_taps,
-        total_leaves, battles_won, boosts, daily_tasks, challenges, last_energy_update
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        total_leaves, battles_won, boosts, daily_tasks, challenges, 
+        last_daily_claim, last_energy_update
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         player_data['user_id'], player_data['name'], player_data['level'],
         player_data['exp'], player_data['leaves'], player_data['stars'],
@@ -100,12 +125,14 @@ def save_player(player_data: dict):
         1 if player_data['has_premium'] else 0, player_data['daily_streak'],
         player_data['total_taps'], player_data['total_leaves'], player_data['battles_won'],
         json.dumps(player_data['boosts']), json.dumps(player_data['daily_tasks']),
-        json.dumps(player_data['challenges']), player_data.get('last_energy_update')
+        json.dumps(player_data['challenges']), 
+        player_data.get('last_daily_claim'), player_data.get('last_energy_update')
     ))
     conn.commit()
     conn.close()
+    print(f"💾 Сохранён игрок {player_data['user_id']}: {player_data['leaves']}🍃, {player_data['energy']}⚡")
 
-# ========== НОВЫЙ ОБРАБОТЧИК OPTIONS ДЛЯ TELEGRAM ==========
+# ========== ОБРАБОТЧИК OPTIONS ==========
 @app.options("/{path:path}")
 async def options_handler(path: str):
     return {"status": "ok"}
@@ -115,7 +142,7 @@ async def options_handler(path: str):
 async def serve_index():
     return FileResponse("index.html")
 
-# ========== ОСТАЛЬНЫЕ ЭНДПОИНТЫ ==========
+# ========== ЭНДПОИНТЫ API ==========
 @app.post("/api/player/register")
 async def register_player(user_id: int, name: str):
     if get_player(user_id):
@@ -138,6 +165,7 @@ async def register_player(user_id: int, name: str):
         'boosts': {},
         'daily_tasks': {},
         'challenges': {},
+        'last_daily_claim': None,
         'last_energy_update': datetime.now().isoformat()
     }
     save_player(new_player)
@@ -150,6 +178,34 @@ async def get_player_data(user_id: int):
         raise HTTPException(status_code=404, detail="Player not found")
     return player
 
+# ⭐ ГЛАВНЫЙ ЭНДПОИНТ: СОХРАНЕНИЕ ВСЕХ ДАННЫХ (энергия приходит из игры)
+@app.post("/api/player/save")
+async def save_player_data(data: PlayerSaveData):
+    player_data = {
+        'user_id': data.user_id,
+        'name': data.name,
+        'level': data.level,
+        'exp': data.exp,
+        'leaves': data.leaves,
+        'stars': data.stars,
+        'tap_power': data.tap_power,
+        'energy': data.energy,           # ← энергия приходит из игры (какая есть)
+        'max_energy': data.max_energy,
+        'has_premium': data.has_premium,
+        'daily_streak': data.daily_streak,
+        'total_taps': data.total_taps,
+        'total_leaves': data.total_leaves,
+        'battles_won': data.battles_won,
+        'boosts': data.boosts,
+        'daily_tasks': data.daily_tasks,
+        'challenges': data.challenges,
+        'last_daily_claim': data.last_daily_claim,
+        'last_energy_update': data.last_energy_update or datetime.now().isoformat()
+    }
+    save_player(player_data)
+    return {"success": True, "message": "Данные сохранены"}
+
+# ЭНДПОИНТ ДЛЯ ТАПОВ (только начисление листьев, энергия не меняется)
 @app.post("/api/tap")
 async def process_tap(tap_data: TapAction):
     player = get_player(tap_data.user_id)
@@ -160,17 +216,18 @@ async def process_tap(tap_data: TapAction):
     if player['has_premium']:
         gain *= 2
     
-    player['energy'] -= tap_data.taps_count
+    # Меняем только листья и тапы
     player['leaves'] += gain * tap_data.taps_count
     player['total_taps'] += tap_data.taps_count
     player['total_leaves'] += gain * tap_data.taps_count
+    # ⭐ Энергию НЕ ТРОГАЕМ - она остаётся как была
     
     save_player(player)
     
     return {
         "success": True,
         "new_leaves": player['leaves'],
-        "new_energy": player['energy'],
+        "new_energy": player['energy'],  # возвращаем текущую энергию (без изменений)
         "total_taps": player['total_taps'],
         "gain": gain
     }
