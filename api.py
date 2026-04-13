@@ -27,8 +27,8 @@ class PlayerSaveData(BaseModel):
     boosts: dict
     daily_tasks: dict
     challenges: dict
-    last_daily_claim: Optional[str] = None  # ← ИСПРАВЛЕНО!
-    last_energy_update: Optional[str] = None  # ← ТОЖЕ ИСПРАВЛЕНО!
+    last_daily_claim: Optional[str] = None
+    last_energy_update: Optional[str] = None
 
 def init_db():
     conn = sqlite3.connect('koala_quest.db')
