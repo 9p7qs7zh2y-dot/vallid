@@ -6,7 +6,7 @@
     <title>Koala Quest — Турнир тапов!</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        /* ВСЕ ВАШИ СТИЛИ ОСТАЮТСЯ БЕЗ ИЗМЕНЕНИЙ */
+        /* ВСЕ СТИЛИ БЕЗ ИЗМЕНЕНИЙ */
         * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
         .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: url('https://i.ibb.co/84mbBWZW/d5d1fb9d-5bf1-4239-875b-76c4f226a13f.webp') no-repeat center center; background-size: cover; background-position: center center; z-index: 10000; display: flex; justify-content: center; align-items: center; transition: opacity 0.6s ease, visibility 0.6s ease; }
         .loading-overlay.hide { opacity: 0; visibility: hidden; }
@@ -130,6 +130,7 @@
 </div>
 
 <div class="app-container" id="gameContainer" style="display: none;">
+    <!-- ВЕСЬ HTML ОСТАЛСЯ БЕЗ ИЗМЕНЕНИЙ -->
     <div class="header">
         <div class="user-info">
             <div class="user-avatar" id="avatar">🐨</div>
@@ -267,31 +268,89 @@
         }
     }
 
-    // ==================== TELEGRAM ====================
+    // ==================== TELEGRAM - ПРАВИЛЬНАЯ ИНИЦИАЛИЗАЦИЯ ====================
     const tg = window.Telegram.WebApp;
-    tg.expand();
-    tg.ready();
     
-    // ==================== ПОЛУЧАЕМ ДАННЫЕ ПОЛЬЗОВАТЕЛЯ ИЗ TELEGRAM ==================== 
-    const user = tg.initDataUnsafe?.user;
-    const userId = user?.id;
-    const userName = user?.first_name;
-
-    if (!userId) {
-        console.warn('⚠️ Telegram данные не получены, используются тестовые значения');
-    }
-
-    console.log('✅ Telegram пользователь:', userId, userName);
-
-    let finalName = userName || "Игрок";
-    if (userId === 201883) {
-        finalName = "Vadim";
+    async function initTelegramUser() {
+        tg.ready();
+        tg.expand();
+        
+        console.log('🔄 Инициализация Telegram WebApp...');
+        
+        // Ждем initData с таймаутом
+        const user = await new Promise((resolve) => {
+            // Проверяем сразу
+            if (tg.initDataUnsafe?.user) {
+                console.log('✅ InitData получен мгновенно');
+                resolve(tg.initDataUnsafe.user);
+                return;
+            }
+            
+            console.log('⏳ Ожидание initData...');
+            let attempts = 0;
+            const maxAttempts = 30; // 3 секунды
+            
+            const checkInterval = setInterval(() => {
+                attempts++;
+                
+                if (tg.initDataUnsafe?.user) {
+                    clearInterval(checkInterval);
+                    console.log(`✅ InitData получен через ${attempts * 100}ms`);
+                    resolve(tg.initDataUnsafe.user);
+                } else if (attempts >= maxAttempts) {
+                    clearInterval(checkInterval);
+                    console.warn('⚠️ Таймаут ожидания initData');
+                    resolve(null);
+                }
+            }, 100);
+        });
+        
+        if (user) {
+            console.log('✅ Telegram ID:', user.id);
+            
+            // Сохраняем в CloudStorage для будущих открытий
+            try {
+                await tg.CloudStorage.setItem('cached_user_id', user.id.toString());
+                await tg.CloudStorage.setItem('cached_user_name', user.first_name);
+                console.log('💾 ID сохранен в CloudStorage');
+            } catch (e) {
+                console.log('⚠️ CloudStorage недоступен:', e);
+            }
+            
+            return {
+                id: user.id,
+                name: (user.id === 201883) ? "Vadim" : user.first_name
+            };
+        }
+        
+        // Фолбек - пробуем CloudStorage
+        try {
+            const cachedId = await tg.CloudStorage.getItem('cached_user_id');
+            const cachedName = await tg.CloudStorage.getItem('cached_user_name');
+            
+            if (cachedId) {
+                console.log('📦 Используем кешированного пользователя:', cachedId);
+                return {
+                    id: parseInt(cachedId),
+                    name: cachedName || "Игрок"
+                };
+            }
+        } catch (e) {
+            console.log('⚠️ Не удалось прочитать CloudStorage');
+        }
+        
+        // Совсем фолбек (только для тестирования в браузере)
+        console.warn('⚠️ Гостевой режим');
+        return {
+            id: Math.floor(Math.random() * 1000000),
+            name: "Гость"
+        };
     }
     
     // ==================== ИНИЦИАЛИЗАЦИЯ ИГРЫ ====================
     let player = {
-        id: userId || Math.floor(Math.random() * 1000000),
-        name: finalName,
+        id: null,
+        name: "Игрок",
         level: 1, exp: 0, expToNext: 100, leaves: 500, stars: 0, tapPower: 1,
         energy: 100, maxEnergy: 100, lastEnergyUpdate: Date.now(), totalLeaves: 0, totalTaps: 0,
         battlesWon: 0, dailyStreak: 1, lastDailyClaim: null, hasPremium: false,
@@ -307,9 +366,14 @@
         rewards: { 1: { leaves: 1000, stars: 10, title: "ЧЕМПИОН ТУРНИРА" }, 2: { leaves: 500, stars: 5, title: "СЕРЕБРЯНЫЙ ПРИЗЁР" }, 3: { leaves: 300, stars: 3, title: "БРОНЗОВЫЙ ПРИЗЁР" }, "top10": { leaves: 100, stars: 1, title: "ТОП-10" }, "participant": { leaves: 50, stars: 0, title: "УЧАСТНИК" } }
     };
     
-    // ==================== ФУНКЦИИ ДЛЯ РАБОТЫ С API (БЕЗ ОТПРАВКИ БОТУ) ====================
+    // ==================== ФУНКЦИИ ДЛЯ РАБОТЫ С API ====================
     
     async function saveToAPI() {
+        if (!player.id || player.id < 1000000) {
+            console.warn('⚠️ Попытка сохранить гостевого пользователя, пропускаем');
+            return;
+        }
+        
         try {
             const response = await fetch('/api/player/save', {
                 method: 'POST',
@@ -430,7 +494,6 @@
         if(player.totalTaps>=100 && !player.dailyTasks.tap100) checkTask('tap100'); 
         if(player.totalTaps>=1000 && !player.challenges.totalTaps1000) checkChallenge('totalTaps1000');
         
-        // ⭐ СОХРАНЯЕМ ТОЛЬКО ЧЕРЕЗ API (БЕЗ ОТПРАВКИ БОТУ) ⭐
         saveToAPI();
         saveGame();
     }
@@ -500,6 +563,13 @@
     
     // ==================== ЗАПУСК ИГРЫ ====================
     (async () => {
+        // Инициализируем Telegram пользователя ПЕРЕД загрузкой игры
+        const userData = await initTelegramUser();
+        player.id = userData.id;
+        player.name = userData.name;
+        
+        console.log('🎮 Запуск игры для пользователя:', player.id, player.name);
+        
         await loadGame();
         updateUI();
         updateProgress();
