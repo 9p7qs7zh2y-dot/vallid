@@ -1,4 +1,4 @@
-<!DOCTYPE html><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
@@ -279,23 +279,22 @@
         
         // Ждем initData с таймаутом
         const user = await new Promise((resolve) => {
-            // Проверяем сразу
             if (tg.initDataUnsafe?.user) {
-                console.log('✅ InitData получен мгновенно');
+                console.log('✅ InitData получен мгновенно:', tg.initDataUnsafe.user);
                 resolve(tg.initDataUnsafe.user);
                 return;
             }
             
             console.log('⏳ Ожидание initData...');
             let attempts = 0;
-            const maxAttempts = 30; // 3 секунды
+            const maxAttempts = 50; // 5 секунд
             
             const checkInterval = setInterval(() => {
                 attempts++;
                 
                 if (tg.initDataUnsafe?.user) {
                     clearInterval(checkInterval);
-                    console.log(`✅ InitData получен через ${attempts * 100}ms`);
+                    console.log('✅ InitData получен:', tg.initDataUnsafe.user);
                     resolve(tg.initDataUnsafe.user);
                 } else if (attempts >= maxAttempts) {
                     clearInterval(checkInterval);
@@ -306,20 +305,23 @@
         });
         
         if (user) {
-            console.log('✅ Telegram ID:', user.id);
+            const userId = user.id;
+            const userName = user.first_name;
             
-            // Сохраняем в CloudStorage для будущих открытий
+            console.log('✅ Telegram ID:', userId, 'Name:', userName);
+            
+            // Сохраняем ID как строку
             try {
-                await tg.CloudStorage.setItem('cached_user_id', user.id.toString());
-                await tg.CloudStorage.setItem('cached_user_name', user.first_name);
+                await tg.CloudStorage.setItem('cached_user_id', String(userId));
+                await tg.CloudStorage.setItem('cached_user_name', String(userName));
                 console.log('💾 ID сохранен в CloudStorage');
             } catch (e) {
                 console.log('⚠️ CloudStorage недоступен:', e);
             }
             
             return {
-                id: user.id,
-                name: (user.id === 201883) ? "Vadim" : user.first_name
+                id: userId,
+                name: (userId === 1384094331) ? "Vadim" : userName
             };
         }
         
@@ -328,7 +330,9 @@
             const cachedId = await tg.CloudStorage.getItem('cached_user_id');
             const cachedName = await tg.CloudStorage.getItem('cached_user_name');
             
-            if (cachedId) {
+            console.log('🔍 CloudStorage вернул:', cachedId, cachedName);
+            
+            if (cachedId && cachedId !== 'undefined' && cachedId !== 'null') {
                 console.log('📦 Используем кешированного пользователя:', cachedId);
                 return {
                     id: parseInt(cachedId),
@@ -336,13 +340,13 @@
                 };
             }
         } catch (e) {
-            console.log('⚠️ Не удалось прочитать CloudStorage');
+            console.log('⚠️ Не удалось прочитать CloudStorage:', e);
         }
         
-        // Совсем фолбек (только для тестирования в браузере)
+        // Совсем фолбек - гость
         console.warn('⚠️ Гостевой режим');
         return {
-            id: Math.floor(Math.random() * 1000000),
+            id: Math.floor(Math.random() * 900000) + 100000,
             name: "Гость"
         };
     }
@@ -563,10 +567,18 @@
     
     // ==================== ЗАПУСК ИГРЫ ====================
     (async () => {
-        // Инициализируем Telegram пользователя ПЕРЕД загрузкой игры
         const userData = await initTelegramUser();
-        player.id = userData.id;
-        player.name = userData.name;
+        
+        // Проверяем что id - число
+        if (userData && userData.id && typeof userData.id === 'number' && !isNaN(userData.id)) {
+            player.id = userData.id;
+            player.name = String(userData.name || 'Игрок');
+            console.log('✅ Игрок инициализирован:', player.id, player.name);
+        } else {
+            console.error('❌ Некорректные данные пользователя:', userData);
+            player.id = Math.floor(Math.random() * 900000) + 100000;
+            player.name = 'Гость';
+        }
         
         console.log('🎮 Запуск игры для пользователя:', player.id, player.name);
         
