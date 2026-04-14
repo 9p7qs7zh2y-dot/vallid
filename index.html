@@ -278,7 +278,7 @@
         
         const user = await new Promise((resolve) => {
             if (tg.initDataUnsafe?.user) {
-                console.log('✅ InitData получен мгновенно');
+                console.log('✅ InitData получен мгновенно:', tg.initDataUnsafe.user);
                 resolve(tg.initDataUnsafe.user);
                 return;
             }
@@ -292,7 +292,7 @@
                 
                 if (tg.initDataUnsafe?.user) {
                     clearInterval(checkInterval);
-                    console.log(`✅ InitData получен через ${attempts * 100}ms`);
+                    console.log('✅ InitData получен:', tg.initDataUnsafe.user);
                     resolve(tg.initDataUnsafe.user);
                 } else if (attempts >= maxAttempts) {
                     clearInterval(checkInterval);
@@ -303,19 +303,24 @@
         });
         
         if (user) {
-            console.log('✅ Telegram ID:', user.id);
+            // 🔴 ВАЖНО: user уже содержит id и first_name
+            const userId = user.id;
+            const userName = user.first_name;
+            
+            console.log('✅ Telegram ID:', userId, 'Name:', userName);
             
             try {
-                await tg.CloudStorage.setItem('cached_user_id', user.id.toString());
-                await tg.CloudStorage.setItem('cached_user_name', user.first_name);
+                await tg.CloudStorage.setItem('cached_user_id', userId.toString());
+                await tg.CloudStorage.setItem('cached_user_name', userName);
                 console.log('💾 ID сохранен в CloudStorage');
             } catch (e) {
                 console.log('⚠️ CloudStorage недоступен:', e);
             }
             
+            // Возвращаем ПЛОСКИЙ объект
             return {
-                id: user.id,
-                name: (user.id === 201883) ? "Vadim" : user.first_name
+                id: userId,
+                name: (userId === 201883) ? "Vadim" : userName
             };
         }
         
@@ -363,6 +368,8 @@
     // ==================== НОВАЯ СИСТЕМА СОХРАНЕНИЯ ====================
     
     async function savePlayerData() {
+        console.log('🔵 savePlayerData вызвана, player.id =', player.id, typeof player.id);
+        
         if (!player.id || player.id < 1000000) {
             console.warn('⚠️ Гостевой режим, не сохраняем');
             return;
@@ -390,7 +397,7 @@
             challenges: player.challenges
         };
 
-        // 1. CloudStorage (надежнее всего)
+        // 1. CloudStorage
         try {
             await tg.CloudStorage.setItem(`player_${player.id}`, JSON.stringify(saveData));
             console.log('💾 Сохранено в CloudStorage');
@@ -408,14 +415,20 @@
                     last_energy_update: new Date().toISOString()
                 })
             });
+            
+            console.log('🔵 API ответ:', response.status);
+            
             if (response.ok) {
                 console.log('✅ Данные сохранены в API');
+            } else {
+                const errorText = await response.text();
+                console.error('❌ Ошибка API:', response.status, errorText);
             }
         } catch(e) {
-            console.log('⚠️ Ошибка сохранения в API:', e);
+            console.error('❌ Ошибка сохранения в API:', e.message);
         }
 
-        // 3. localStorage (резерв)
+        // 3. localStorage
         try {
             localStorage.setItem(`koala_quest_${player.id}`, JSON.stringify(saveData));
         } catch (e) {}
@@ -470,13 +483,11 @@
                 await savePlayerData();
                 return true;
             } else if (response.status === 404) {
-                // Проверяем что ID валидный перед регистрацией
                 if (!player.id || player.id < 1000000 || isNaN(player.id)) {
                     console.error('❌ Некорректный ID для регистрации:', player.id);
                     return false;
                 }
                 
-                // Отправляем POST с JSON
                 try {
                     const registerResponse = await fetch('/api/player/register', {
                         method: 'POST',
@@ -500,7 +511,7 @@
             console.log('⚠️ API не доступен');
         }
 
-        // 3. localStorage (резерв)
+        // 3. localStorage
         try {
             const localData = localStorage.getItem(`koala_quest_${player.id}`);
             if (localData) {
@@ -1144,9 +1155,9 @@
     (async () => {
         const userData = await initTelegramUser();
         
-        // Проверяем что получили нормальные данные
-        if (userData && userData.id && !isNaN(userData.id)) {
-            player.id = parseInt(userData.id);
+        // 🔴 ВАЖНО: проверяем что id - число, а не объект
+        if (userData && userData.id && typeof userData.id === 'number') {
+            player.id = userData.id;
             player.name = String(userData.name || 'Игрок');
             console.log('✅ Игрок инициализирован:', player.id, player.name);
         } else {
