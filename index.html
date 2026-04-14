@@ -130,7 +130,6 @@
 </div>
 
 <div class="app-container" id="gameContainer" style="display: none;">
-    <!-- ВЕСЬ HTML ОСТАЛСЯ БЕЗ ИЗМЕНЕНИЙ -->
     <div class="header">
         <div class="user-info">
             <div class="user-avatar" id="avatar">🐨</div>
@@ -277,9 +276,7 @@
         
         console.log('🔄 Инициализация Telegram WebApp...');
         
-        // Ждем initData с таймаутом
         const user = await new Promise((resolve) => {
-            // Проверяем сразу
             if (tg.initDataUnsafe?.user) {
                 console.log('✅ InitData получен мгновенно');
                 resolve(tg.initDataUnsafe.user);
@@ -288,7 +285,7 @@
             
             console.log('⏳ Ожидание initData...');
             let attempts = 0;
-            const maxAttempts = 30; // 3 секунды
+            const maxAttempts = 30;
             
             const checkInterval = setInterval(() => {
                 attempts++;
@@ -308,7 +305,6 @@
         if (user) {
             console.log('✅ Telegram ID:', user.id);
             
-            // Сохраняем в CloudStorage для будущих открытий
             try {
                 await tg.CloudStorage.setItem('cached_user_id', user.id.toString());
                 await tg.CloudStorage.setItem('cached_user_name', user.first_name);
@@ -323,7 +319,6 @@
             };
         }
         
-        // Фолбек - пробуем CloudStorage
         try {
             const cachedId = await tg.CloudStorage.getItem('cached_user_id');
             const cachedName = await tg.CloudStorage.getItem('cached_user_name');
@@ -339,7 +334,6 @@
             console.log('⚠️ Не удалось прочитать CloudStorage');
         }
         
-        // Совсем фолбек (только для тестирования в браузере)
         console.warn('⚠️ Гостевой режим');
         return {
             id: Math.floor(Math.random() * 1000000),
@@ -366,55 +360,90 @@
         rewards: { 1: { leaves: 1000, stars: 10, title: "ЧЕМПИОН ТУРНИРА" }, 2: { leaves: 500, stars: 5, title: "СЕРЕБРЯНЫЙ ПРИЗЁР" }, 3: { leaves: 300, stars: 3, title: "БРОНЗОВЫЙ ПРИЗЁР" }, "top10": { leaves: 100, stars: 1, title: "ТОП-10" }, "participant": { leaves: 50, stars: 0, title: "УЧАСТНИК" } }
     };
     
-    // ==================== ФУНКЦИИ ДЛЯ РАБОТЫ С API ====================
+    // ==================== НОВАЯ СИСТЕМА СОХРАНЕНИЯ ====================
     
-    async function saveToAPI() {
+    async function savePlayerData() {
         if (!player.id || player.id < 1000000) {
-            console.warn('⚠️ Попытка сохранить гостевого пользователя, пропускаем');
+            console.warn('⚠️ Гостевой режим, не сохраняем');
             return;
         }
-        
+
+        const saveData = {
+            user_id: player.id,
+            name: player.name,
+            leaves: player.leaves,
+            stars: player.stars,
+            level: player.level,
+            exp: player.exp,
+            expToNext: player.expToNext,
+            tap_power: player.tapPower,
+            energy: player.energy,
+            max_energy: player.maxEnergy,
+            total_taps: player.totalTaps,
+            total_leaves: player.totalLeaves,
+            battles_won: player.battlesWon,
+            daily_streak: player.dailyStreak,
+            last_daily_claim: player.lastDailyClaim,
+            has_premium: player.hasPremium,
+            boosts: player.boosts,
+            daily_tasks: player.dailyTasks,
+            challenges: player.challenges
+        };
+
+        // 1. CloudStorage (надежнее всего)
+        try {
+            await tg.CloudStorage.setItem(`player_${player.id}`, JSON.stringify(saveData));
+            console.log('💾 Сохранено в CloudStorage');
+        } catch (e) {
+            console.log('⚠️ CloudStorage недоступен:', e);
+        }
+
+        // 2. API
         try {
             const response = await fetch('/api/player/save', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    user_id: player.id,
-                    name: player.name,
-                    leaves: player.leaves,
-                    stars: player.stars,
-                    level: player.level,
-                    exp: player.exp,
-                    tap_power: player.tapPower,
-                    energy: player.energy,
-                    max_energy: player.maxEnergy,
-                    has_premium: player.hasPremium,
-                    daily_streak: player.dailyStreak,
-                    total_taps: player.totalTaps,
-                    total_leaves: player.totalLeaves,
-                    battles_won: player.battlesWon,
-                    boosts: player.boosts,
-                    daily_tasks: player.dailyTasks,
-                    challenges: player.challenges,
-                    last_daily_claim: player.lastDailyClaim,
+                    ...saveData,
                     last_energy_update: new Date().toISOString()
                 })
             });
             if (response.ok) {
                 console.log('✅ Данные сохранены в API');
-            } else {
-                console.log('❌ Ошибка API:', response.status);
             }
         } catch(e) {
             console.log('⚠️ Ошибка сохранения в API:', e);
         }
+
+        // 3. localStorage (резерв)
+        try {
+            localStorage.setItem(`koala_quest_${player.id}`, JSON.stringify(saveData));
+        } catch (e) {}
     }
     
-    async function loadFromAPI() {
+    async function loadPlayerData() {
         if (!player.id) {
-            console.log('⚠️ Нет ID пользователя');
+            console.log('⚠️ Нет ID, загрузка невозможна');
             return false;
         }
+
+        console.log('🔄 Загрузка данных для ID:', player.id);
+
+        // 1. CloudStorage
+        try {
+            const cloudData = await tg.CloudStorage.getItem(`player_${player.id}`);
+            if (cloudData) {
+                const data = JSON.parse(cloudData);
+                Object.assign(player, data);
+                player.lastEnergyUpdate = Date.now();
+                console.log('✅ Загружено из CloudStorage:', player.leaves, '🍃');
+                return true;
+            }
+        } catch (e) {
+            console.log('⚠️ Ошибка чтения CloudStorage:', e);
+        }
+
+        // 2. API
         try {
             const response = await fetch(`/api/player/${player.id}`);
             if (response.ok) {
@@ -423,6 +452,7 @@
                 player.stars = data.stars || 0;
                 player.level = data.level || 1;
                 player.exp = data.exp || 0;
+                player.expToNext = 100;
                 player.tapPower = data.tap_power || 1;
                 player.energy = data.energy || 100;
                 player.maxEnergy = data.max_energy || 100;
@@ -434,8 +464,10 @@
                 if (data.boosts) player.boosts = data.boosts;
                 if (data.daily_tasks) player.dailyTasks = data.daily_tasks;
                 if (data.challenges) player.challenges = data.challenges;
+                player.lastDailyClaim = data.last_daily_claim;
                 player.lastEnergyUpdate = Date.now();
-                console.log('✅ Данные загружены из API');
+                console.log('✅ Загружено из API');
+                await savePlayerData();
                 return true;
             } else if (response.status === 404) {
                 await fetch(`/api/player/register?user_id=${player.id}&name=${encodeURIComponent(player.name)}`, { method: 'POST' });
@@ -445,125 +477,632 @@
         } catch(e) {
             console.log('⚠️ API не доступен');
         }
+
+        // 3. localStorage (резерв)
+        try {
+            const localData = localStorage.getItem(`koala_quest_${player.id}`);
+            if (localData) {
+                const data = JSON.parse(localData);
+                Object.assign(player, data);
+                player.lastEnergyUpdate = Date.now();
+                console.log('✅ Загружено из localStorage');
+                await savePlayerData();
+                return true;
+            }
+        } catch (e) {}
+
+        console.log('⚠️ Данные не найдены, начинаем с нуля');
         return false;
     }
     
     // === Функции игры ===
-    function loadTournamentData() { const saved = localStorage.getItem(`koala_tournament_${player.id}`); if(saved){ const d=JSON.parse(saved); tournament.todayAttempts=d.todayAttempts||0; tournament.lastAttemptDate=d.lastAttemptDate; tournament.myTaps=d.myTaps||0; } loadTournamentLeaderboard(); }
-    function saveTournamentData() { localStorage.setItem(`koala_tournament_${player.id}`, JSON.stringify({ todayAttempts: tournament.todayAttempts, lastAttemptDate: tournament.lastAttemptDate, myTaps: tournament.myTaps })); }
-    function loadTournamentLeaderboard() { const all = localStorage.getItem('koala_tournament_all'); if(all) tournament.participants = JSON.parse(all); else tournament.participants = [{ id:999001,name:"Тапатель",taps:245,avatar:"🏅"},{ id:999002,name:"Скорость",taps:198,avatar:"⚡"},{ id:999003,name:"Король",taps:167,avatar:"👑"}]; const existing = tournament.participants.find(p=>p.id==player.id); if(existing){ existing.taps=tournament.myTaps; existing.name=player.name; }else if(tournament.myTaps>0) tournament.participants.push({id:player.id,name:player.name,taps:tournament.myTaps,avatar:"🐨"}); tournament.participants.sort((a,b)=>b.taps-a.taps); saveTournamentLeaderboard(); }
-    function saveTournamentLeaderboard() { localStorage.setItem('koala_tournament_all', JSON.stringify(tournament.participants.slice(0,50))); }
-    function canStartTournament() { const today = new Date().toDateString(); if(tournament.lastAttemptDate !== today) return true; return tournament.todayAttempts < tournament.maxAttemptsPerDay; }
-    function getRemainingAttempts() { const today = new Date().toDateString(); if(tournament.lastAttemptDate !== today) return tournament.maxAttemptsPerDay; return tournament.maxAttemptsPerDay - tournament.todayAttempts; }
-    function startTournament() { if(!canStartTournament()){ tg.showPopup({title:"Лимит!",message:`Только ${tournament.maxAttemptsPerDay} раза в день.`,buttons:[{type:"ok"}]}); return; } if(tournament.active){ tg.showPopup({title:"Уже идёт!",message:"Заверши текущий турнир",buttons:[{type:"ok"}]}); return; } tournament.active=true; tournament.startTime=Date.now(); tournament.endTime=Date.now()+tournament.duration*1000; tournament.myTaps=0; tg.showPopup({title:"🏆 ТУРНИР НАЧАЛСЯ!",message:`${tournament.duration} секунд тапай!`,buttons:[{type:"ok"}]}); updateTournamentUI(); startTournamentTimer(); }
-    let tournamentInterval=null;
-    function startTournamentTimer(){ if(tournamentInterval) clearInterval(tournamentInterval); tournamentInterval=setInterval(()=>{ if(!tournament.active){ clearInterval(tournamentInterval); return; } const now=Date.now(); if(now>=tournament.endTime){ endTournament(); clearInterval(tournamentInterval); } updateTournamentTimer(); },100); }
-    function updateTournamentTimer(){ if(!tournament.active){ document.getElementById('tournamentTimer').innerHTML=`До конца: --:--`; return; } const remaining=Math.max(0,Math.ceil((tournament.endTime-Date.now())/1000)); const btn=document.getElementById('tournamentJoinBtn'); if(remaining>0){ btn.innerHTML=`⚡ ТУРНИР ИДЁТ! Осталось: ${remaining} сек (${tournament.myTaps} тапов)`; btn.classList.add('disabled'); document.getElementById('tournamentTimer').innerHTML=`⏱️ ${remaining} сек`; }else{ const remAttempts = getRemainingAttempts(); btn.innerHTML=`⚡ УЧАСТВОВАТЬ (${remAttempts}/${tournament.maxAttemptsPerDay} сегодня)`; btn.classList.remove('disabled'); document.getElementById('tournamentTimer').innerHTML=`До конца: --:--`; } }
-    function tournamentTap(){ if(!tournament.active) return; if(Date.now()>=tournament.endTime){ endTournament(); return; } tournament.myTaps++; document.getElementById('tournamentMyTaps').innerHTML=tournament.myTaps; 
-        const effect = document.createElement('div'); effect.className='tap-effect-number'; effect.innerHTML=`🏆 +1 🏆`; effect.style.left=(window.innerWidth/2-30)+'px'; effect.style.top='200px'; effect.style.color='#FF6600'; document.body.appendChild(effect); setTimeout(()=>effect.remove(),500); 
+    function loadTournamentData() { 
+        const saved = localStorage.getItem(`koala_tournament_${player.id}`); 
+        if(saved) { 
+            const d = JSON.parse(saved); 
+            tournament.todayAttempts = d.todayAttempts || 0; 
+            tournament.lastAttemptDate = d.lastAttemptDate; 
+            tournament.myTaps = d.myTaps || 0; 
+        } 
+        loadTournamentLeaderboard(); 
     }
-    function endTournament(){ if(!tournament.active) return; tournament.active=false; const today=new Date().toDateString(); if(tournament.lastAttemptDate!==today) tournament.lastAttemptDate=today, tournament.todayAttempts=1; else tournament.todayAttempts++; const existing=tournament.participants.find(p=>p.id==player.id); if(existing) existing.taps=Math.max(existing.taps,tournament.myTaps); else tournament.participants.push({id:player.id,name:player.name,taps:tournament.myTaps,avatar:"🐨"}); tournament.participants.sort((a,b)=>b.taps-a.taps); saveTournamentLeaderboard(); const rank=tournament.participants.findIndex(p=>p.id==player.id)+1; let reward=null; if(rank===1) reward=tournament.rewards[1]; else if(rank===2) reward=tournament.rewards[2]; else if(rank===3) reward=tournament.rewards[3]; else if(rank<=10) reward=tournament.rewards.top10; else reward=tournament.rewards.participant; if(reward){ let leafReward=reward.leaves, starReward=reward.stars; if(player.hasPremium) leafReward*=2; player.leaves+=leafReward; player.stars+=starReward; tg.showPopup({title:"🏆 ТУРНИР ЗАВЕРШЁН!",message:`Место: ${rank} из ${tournament.participants.length}\nТапов: ${tournament.myTaps}\nНаграда: +${leafReward}🍃 +${starReward}⭐`,buttons:[{type:"ok"}]}); if(rank===1){ if(!player.dailyTasks.tournamentWin) player.dailyTasks.tournamentWin=true, player.leaves+=500; if(!player.challenges.tournamentChampion) player.challenges.tournamentChampion=true, player.leaves+=1000, player.stars+=20; } } saveTournamentData(); updateUI(); updateTournamentUI(); updateTournamentLeaderboardDisplay(); const remAttempts = getRemainingAttempts(); document.getElementById('tournamentJoinBtn').innerHTML=`⚡ УЧАСТВОВАТЬ (${remAttempts}/${tournament.maxAttemptsPerDay} сегодня)`; document.getElementById('tournamentJoinBtn').classList.remove('disabled'); }
-    function updateTournamentUI(){ document.getElementById('tournamentMyTaps').innerHTML=tournament.myTaps; updateTournamentLeaderboardDisplay(); const remaining=getRemainingAttempts(); const btn=document.getElementById('tournamentJoinBtn'); if(!tournament.active) btn.innerHTML=`⚡ УЧАСТВОВАТЬ (${remaining}/${tournament.maxAttemptsPerDay} сегодня)`, btn.classList.remove('disabled'); const progressPercent=((tournament.maxAttemptsPerDay-remaining)/tournament.maxAttemptsPerDay)*100; document.getElementById('tournamentProgress').style.width=`${progressPercent}%`; }
-    function updateTournamentLeaderboardDisplay(){ const topParticipants=tournament.participants.slice(0,5); const listDiv=document.getElementById('tournamentRankList'); if(listDiv) listDiv.innerHTML=topParticipants.map((p,idx)=>`<div class="tournament-rank-item"><span>${idx+1}. ${p.avatar||'🐨'} ${p.name}</span><span style="color:#FF6600; font-weight:bold;">${p.taps} тапов</span></div>`).join('')||'<div style="opacity:0.5;">Нет участников</div>'; if(tournament.participants.length>0) document.getElementById('tournamentLeader').innerHTML=tournament.participants[0].name, document.getElementById('tournamentLeaderTaps').innerHTML=tournament.participants[0].taps; }
-    function updateEnergy(){ const now=Date.now(); const secondsPassed=Math.floor((now-player.lastEnergyUpdate)/1000); let regenRate=0.5; if(player.boosts.energyBoost.active && now<player.boosts.energyBoost.endTime) regenRate=1; if(player.hasPremium) regenRate*=2; player.energy=Math.min(player.maxEnergy,player.energy+secondsPassed*regenRate); player.lastEnergyUpdate=now; const percent=(player.energy/player.maxEnergy)*100; document.getElementById('energyFill').style.width=`${percent}%`; document.getElementById('energyText').innerHTML=`${Math.floor(player.energy)}/${player.maxEnergy}`; }
-    function createTapEffect(x,y,value){ const e=document.createElement('div'); e.className='tap-effect-number'; e.innerHTML=`+${value} 🍃`; e.style.left=(x-20)+'px'; e.style.top=(y-30)+'px'; document.body.appendChild(e); setTimeout(()=>e.remove(),600); }
     
-    // === ГЛАВНАЯ ФУНКЦИЯ TAP ===
-    function tap(){ 
-        if(player.energy<1){ 
-            tg.showPopup({title:"😴 Коала устала!",message:"Нужна энергия",buttons:[{type:"ok"}]}); 
+    function saveTournamentData() { 
+        localStorage.setItem(`koala_tournament_${player.id}`, JSON.stringify({ 
+            todayAttempts: tournament.todayAttempts, 
+            lastAttemptDate: tournament.lastAttemptDate, 
+            myTaps: tournament.myTaps 
+        })); 
+    }
+    
+    function loadTournamentLeaderboard() { 
+        const all = localStorage.getItem('koala_tournament_all'); 
+        if(all) tournament.participants = JSON.parse(all); 
+        else tournament.participants = [
+            { id:999001, name:"Тапатель", taps:245, avatar:"🏅" },
+            { id:999002, name:"Скорость", taps:198, avatar:"⚡" },
+            { id:999003, name:"Король", taps:167, avatar:"👑" }
+        ]; 
+        const existing = tournament.participants.find(p => p.id == player.id); 
+        if(existing) { 
+            existing.taps = tournament.myTaps; 
+            existing.name = player.name; 
+        } else if(tournament.myTaps > 0) {
+            tournament.participants.push({ id: player.id, name: player.name, taps: tournament.myTaps, avatar: "🐨" }); 
+        }
+        tournament.participants.sort((a, b) => b.taps - a.taps); 
+        saveTournamentLeaderboard(); 
+    }
+    
+    function saveTournamentLeaderboard() { 
+        localStorage.setItem('koala_tournament_all', JSON.stringify(tournament.participants.slice(0, 50))); 
+    }
+    
+    function canStartTournament() { 
+        const today = new Date().toDateString(); 
+        if(tournament.lastAttemptDate !== today) return true; 
+        return tournament.todayAttempts < tournament.maxAttemptsPerDay; 
+    }
+    
+    function getRemainingAttempts() { 
+        const today = new Date().toDateString(); 
+        if(tournament.lastAttemptDate !== today) return tournament.maxAttemptsPerDay; 
+        return tournament.maxAttemptsPerDay - tournament.todayAttempts; 
+    }
+    
+    function startTournament() { 
+        if(!canStartTournament()) { 
+            tg.showPopup({ title: "Лимит!", message: `Только ${tournament.maxAttemptsPerDay} раза в день.`, buttons: [{ type: "ok" }] }); 
             return; 
         } 
-        let gain=player.tapPower; 
-        if(player.boosts.doubleTap.active && Date.now()<player.boosts.doubleTap.endTime) gain*=2; 
-        if(player.hasPremium) gain*=2; 
-        player.energy-=1; 
-        player.leaves+=gain; 
-        player.totalLeaves+=gain; 
-        player.totalTaps+=1; 
+        if(tournament.active) { 
+            tg.showPopup({ title: "Уже идёт!", message: "Заверши текущий турнир", buttons: [{ type: "ok" }] }); 
+            return; 
+        } 
+        tournament.active = true; 
+        tournament.startTime = Date.now(); 
+        tournament.endTime = Date.now() + tournament.duration * 1000; 
+        tournament.myTaps = 0; 
+        tg.showPopup({ title: "🏆 ТУРНИР НАЧАЛСЯ!", message: `${tournament.duration} секунд тапай!`, buttons: [{ type: "ok" }] }); 
+        updateTournamentUI(); 
+        startTournamentTimer(); 
+    }
+    
+    let tournamentInterval = null;
+    
+    function startTournamentTimer() { 
+        if(tournamentInterval) clearInterval(tournamentInterval); 
+        tournamentInterval = setInterval(() => { 
+            if(!tournament.active) { 
+                clearInterval(tournamentInterval); 
+                return; 
+            } 
+            const now = Date.now(); 
+            if(now >= tournament.endTime) { 
+                endTournament(); 
+                clearInterval(tournamentInterval); 
+            } 
+            updateTournamentTimer(); 
+        }, 100); 
+    }
+    
+    function updateTournamentTimer() { 
+        if(!tournament.active) { 
+            document.getElementById('tournamentTimer').innerHTML = `До конца: --:--`; 
+            return; 
+        } 
+        const remaining = Math.max(0, Math.ceil((tournament.endTime - Date.now()) / 1000)); 
+        const btn = document.getElementById('tournamentJoinBtn'); 
+        if(remaining > 0) { 
+            btn.innerHTML = `⚡ ТУРНИР ИДЁТ! Осталось: ${remaining} сек (${tournament.myTaps} тапов)`; 
+            btn.classList.add('disabled'); 
+            document.getElementById('tournamentTimer').innerHTML = `⏱️ ${remaining} сек`; 
+        } else { 
+            const remAttempts = getRemainingAttempts(); 
+            btn.innerHTML = `⚡ УЧАСТВОВАТЬ (${remAttempts}/${tournament.maxAttemptsPerDay} сегодня)`; 
+            btn.classList.remove('disabled'); 
+            document.getElementById('tournamentTimer').innerHTML = `До конца: --:--`; 
+        } 
+    }
+    
+    function tournamentTap() { 
+        if(!tournament.active) return; 
+        if(Date.now() >= tournament.endTime) { 
+            endTournament(); 
+            return; 
+        } 
+        tournament.myTaps++; 
+        document.getElementById('tournamentMyTaps').innerHTML = tournament.myTaps; 
+        const effect = document.createElement('div'); 
+        effect.className = 'tap-effect-number'; 
+        effect.innerHTML = `🏆 +1 🏆`; 
+        effect.style.left = (window.innerWidth / 2 - 30) + 'px'; 
+        effect.style.top = '200px'; 
+        effect.style.color = '#FF6600'; 
+        document.body.appendChild(effect); 
+        setTimeout(() => effect.remove(), 500); 
+    }
+    
+    function endTournament() { 
+        if(!tournament.active) return; 
+        tournament.active = false; 
+        const today = new Date().toDateString(); 
+        if(tournament.lastAttemptDate !== today) {
+            tournament.lastAttemptDate = today;
+            tournament.todayAttempts = 1; 
+        } else {
+            tournament.todayAttempts++; 
+        }
+        const existing = tournament.participants.find(p => p.id == player.id); 
+        if(existing) {
+            existing.taps = Math.max(existing.taps, tournament.myTaps); 
+        } else {
+            tournament.participants.push({ id: player.id, name: player.name, taps: tournament.myTaps, avatar: "🐨" }); 
+        }
+        tournament.participants.sort((a, b) => b.taps - a.taps); 
+        saveTournamentLeaderboard(); 
+        const rank = tournament.participants.findIndex(p => p.id == player.id) + 1; 
+        let reward = null; 
+        if(rank === 1) reward = tournament.rewards[1]; 
+        else if(rank === 2) reward = tournament.rewards[2]; 
+        else if(rank === 3) reward = tournament.rewards[3]; 
+        else if(rank <= 10) reward = tournament.rewards.top10; 
+        else reward = tournament.rewards.participant; 
+        if(reward) { 
+            let leafReward = reward.leaves, starReward = reward.stars; 
+            if(player.hasPremium) leafReward *= 2; 
+            player.leaves += leafReward; 
+            player.stars += starReward; 
+            tg.showPopup({ 
+                title: "🏆 ТУРНИР ЗАВЕРШЁН!", 
+                message: `Место: ${rank} из ${tournament.participants.length}\nТапов: ${tournament.myTaps}\nНаграда: +${leafReward}🍃 +${starReward}⭐`, 
+                buttons: [{ type: "ok" }] 
+            }); 
+            if(rank === 1) { 
+                if(!player.dailyTasks.tournamentWin) {
+                    player.dailyTasks.tournamentWin = true;
+                    player.leaves += 500; 
+                }
+                if(!player.challenges.tournamentChampion) {
+                    player.challenges.tournamentChampion = true;
+                    player.leaves += 1000;
+                    player.stars += 20; 
+                }
+            } 
+        } 
+        saveTournamentData(); 
+        updateUI(); 
+        updateTournamentUI(); 
+        updateTournamentLeaderboardDisplay(); 
+        const remAttempts = getRemainingAttempts(); 
+        document.getElementById('tournamentJoinBtn').innerHTML = `⚡ УЧАСТВОВАТЬ (${remAttempts}/${tournament.maxAttemptsPerDay} сегодня)`; 
+        document.getElementById('tournamentJoinBtn').classList.remove('disabled');
+        savePlayerData();
+    }
+    
+    function updateTournamentUI() { 
+        document.getElementById('tournamentMyTaps').innerHTML = tournament.myTaps; 
+        updateTournamentLeaderboardDisplay(); 
+        const remaining = getRemainingAttempts(); 
+        const btn = document.getElementById('tournamentJoinBtn'); 
+        if(!tournament.active) {
+            btn.innerHTML = `⚡ УЧАСТВОВАТЬ (${remaining}/${tournament.maxAttemptsPerDay} сегодня)`;
+            btn.classList.remove('disabled');
+        }
+        const progressPercent = ((tournament.maxAttemptsPerDay - remaining) / tournament.maxAttemptsPerDay) * 100; 
+        document.getElementById('tournamentProgress').style.width = `${progressPercent}%`; 
+    }
+    
+    function updateTournamentLeaderboardDisplay() { 
+        const topParticipants = tournament.participants.slice(0, 5); 
+        const listDiv = document.getElementById('tournamentRankList'); 
+        if(listDiv) {
+            listDiv.innerHTML = topParticipants.map((p, idx) => 
+                `<div class="tournament-rank-item"><span>${idx + 1}. ${p.avatar || '🐨'} ${p.name}</span><span style="color:#FF6600; font-weight:bold;">${p.taps} тапов</span></div>`
+            ).join('') || '<div style="opacity:0.5;">Нет участников</div>'; 
+        }
+        if(tournament.participants.length > 0) {
+            document.getElementById('tournamentLeader').innerHTML = tournament.participants[0].name;
+            document.getElementById('tournamentLeaderTaps').innerHTML = tournament.participants[0].taps; 
+        }
+    }
+    
+    function updateEnergy() { 
+        const now = Date.now(); 
+        const secondsPassed = Math.floor((now - player.lastEnergyUpdate) / 1000); 
+        let regenRate = 0.5; 
+        if(player.boosts.energyBoost.active && now < player.boosts.energyBoost.endTime) regenRate = 1; 
+        if(player.hasPremium) regenRate *= 2; 
+        player.energy = Math.min(player.maxEnergy, player.energy + secondsPassed * regenRate); 
+        player.lastEnergyUpdate = now; 
+        const percent = (player.energy / player.maxEnergy) * 100; 
+        document.getElementById('energyFill').style.width = `${percent}%`; 
+        document.getElementById('energyText').innerHTML = `${Math.floor(player.energy)}/${player.maxEnergy}`; 
+    }
+    
+    function createTapEffect(x, y, value) { 
+        const e = document.createElement('div'); 
+        e.className = 'tap-effect-number'; 
+        e.innerHTML = `+${value} 🍃`; 
+        e.style.left = (x - 20) + 'px'; 
+        e.style.top = (y - 30) + 'px'; 
+        document.body.appendChild(e); 
+        setTimeout(() => e.remove(), 600); 
+    }
+    
+    // === ГЛАВНАЯ ФУНКЦИЯ TAP ===
+    function tap() { 
+        if(player.energy < 1) { 
+            tg.showPopup({ title: "😴 Коала устала!", message: "Нужна энергия", buttons: [{ type: "ok" }] }); 
+            return; 
+        } 
+        let gain = player.tapPower; 
+        if(player.boosts.doubleTap.active && Date.now() < player.boosts.doubleTap.endTime) gain *= 2; 
+        if(player.hasPremium) gain *= 2; 
+        player.energy -= 1; 
+        player.leaves += gain; 
+        player.totalLeaves += gain; 
+        player.totalTaps += 1; 
         addExp(gain); 
         updateUI(); 
         updateEnergy(); 
         if(tournament.active) tournamentTap(); 
-        const koala=document.querySelector('.koala-container'); 
-        koala.style.transform='scale(0.95)'; 
-        setTimeout(()=>koala.style.transform='',100); 
-        const rect=koala.getBoundingClientRect(); 
-        createTapEffect(rect.left+rect.width/2,rect.top+rect.height/2,gain); 
-        if(player.totalTaps>=50 && !player.dailyTasks.tap50) checkTask('tap50'); 
-        if(player.totalTaps>=100 && !player.dailyTasks.tap100) checkTask('tap100'); 
-        if(player.totalTaps>=1000 && !player.challenges.totalTaps1000) checkChallenge('totalTaps1000');
+        const koala = document.querySelector('.koala-container'); 
+        koala.style.transform = 'scale(0.95)'; 
+        setTimeout(() => koala.style.transform = '', 100); 
+        const rect = koala.getBoundingClientRect(); 
+        createTapEffect(rect.left + rect.width / 2, rect.top + rect.height / 2, gain); 
+        if(player.totalTaps >= 50 && !player.dailyTasks.tap50) checkTask('tap50'); 
+        if(player.totalTaps >= 100 && !player.dailyTasks.tap100) checkTask('tap100'); 
+        if(player.totalTaps >= 1000 && !player.challenges.totalTaps1000) checkChallenge('totalTaps1000');
         
-        saveToAPI();
-        saveGame();
+        savePlayerData();
     }
     
-    function addExp(amount){ if(player.hasPremium) amount*=2; player.exp+=amount; while(player.exp>=player.expToNext){ player.exp-=player.expToNext; player.level++; player.expToNext=Math.floor(player.expToNext*1.2); if(player.level%10===0) player.tapPower+=0.5; tg.showPopup({title:"🎉 УРОВЕНЬ ПОВЫШЕН!",message:`Уровень ${player.level}! Сила тапа: ${player.tapPower}`,buttons:[{type:"ok"}]}); if(player.level>=5 && !player.challenges.level5) checkChallenge('level5'); if(player.level>=10 && !player.challenges.level10) checkChallenge('level10'); } }
-    function checkTask(taskId){ if(!player.dailyTasks[taskId]){ player.dailyTasks[taskId]=true; let reward={tap50:100,tap100:200,inviteFriend:300,tournamentWin:500}[taskId]; if(player.hasPremium) reward*=2; player.leaves+=reward; tg.showPopup({title:"✅ Задание выполнено!",message:`+${reward} 🍃`,buttons:[{type:"ok"}]}); updateUI(); saveGame(); saveToAPI(); } }
-    function checkChallenge(challengeId){ if(!player.challenges[challengeId]){ player.challenges[challengeId]=true; let reward={level5:500,level10:1000,totalTaps1000:500,tournamentChampion:1000}[challengeId]; if(player.hasPremium) reward*=2; player.leaves+=reward; if(challengeId==='tournamentChampion') player.stars+=20; tg.showPopup({title:"🏆 Челлендж завершен!",message:`+${reward} 🍃`,buttons:[{type:"ok"}]}); updateUI(); saveGame(); saveToAPI(); } }
-    function claimDaily(){ const today=new Date().toDateString(); if(player.lastDailyClaim===today){ tg.showPopup({title:"Уже получено!",message:"Завтра снова!",buttons:[{type:"ok"}]}); return; } let bonus=100*player.dailyStreak; if(player.hasPremium) bonus*=2; player.leaves+=bonus; player.dailyStreak++; player.lastDailyClaim=today; tg.showPopup({title:"🎁 Ежедневный бонус!",message:`+${bonus} 🍃\nСтрик: ${player.dailyStreak}`,buttons:[{type:"ok"}]}); updateUI(); saveGame(); saveToAPI(); }
-    function buyWithLeaves(item,price,callback){ if(player.leaves>=price){ player.leaves-=price; callback(); updateUI(); saveGame(); saveToAPI(); return true; }else{ tg.showPopup({title:"Не хватает листьев!",message:`Нужно ${price} 🍃`,buttons:[{type:"ok"}]}); return false; } }
-    function buyWithStars(item,price,callback){ tg.showPopup({title:"Покупка за Stars",message:`Купить за ${price} ⭐?`,buttons:[{id:"buy",type:"default",text:"Купить"},{id:"cancel",type:"cancel",text:"Отмена"}]},(buttonId)=>{ if(buttonId==="buy"){ tg.showPopup({title:"Оплата",message:"Открывается платёж...",buttons:[{type:"ok"}]}); callback(); } }); }
-    function buyEnergy(){ let missingEnergy = player.maxEnergy - player.energy; let price = Math.ceil(missingEnergy * 0.5); if(price <= 0) { tg.showPopup({title:"Энергия полна!",message:"У тебя уже полная энергия",buttons:[{type:"ok"}]}); return; } buyWithLeaves("energy", price, () => { player.energy = player.maxEnergy; updateEnergy(); tg.showPopup({title:"Успех!",message:`Энергия восстановлена за ${price} 🍃!`,buttons:[{type:"ok"}]}); }); }
-    function buyTapUpgrade(){ let price=Math.floor(100*player.tapPower); buyWithLeaves("tapUpgrade",price,()=>{ player.tapPower++; tg.showPopup({title:"Улучшение!",message:`Сила тапа +1 (теперь ${player.tapPower})`,buttons:[{type:"ok"}]}); }); }
-    function buyDoubleTapBoost(){ buyWithStars("doubleTap",49,()=>{ player.boosts.doubleTap.active=true; player.boosts.doubleTap.endTime=Date.now()+3600000; updateUI(); saveToAPI(); tg.showPopup({title:"Буст активирован!",message:"Двойной тап на 1 час!",buttons:[{type:"ok"}]}); }); }
-    function buyAutoTapBoost(){ buyWithStars("autoTap",99,()=>{ player.boosts.autoTap.active=true; player.boosts.autoTap.endTime=Date.now()+86400000; updateUI(); saveToAPI(); tg.showPopup({title:"Буст активирован!",message:"Авто-тап на 24 часа!",buttons:[{type:"ok"}]}); }); }
-    function buyEnergyBoost(){ buyWithStars("energyBoost",79,()=>{ player.boosts.energyBoost.active=true; player.boosts.energyBoost.endTime=Date.now()+43200000; updateUI(); saveToAPI(); tg.showPopup({title:"Буст активирован!",message:"Ускоренная регенерация на 12ч",buttons:[{type:"ok"}]}); }); }
-    function buyPremium(){ buyWithStars("premium",299,()=>{ player.hasPremium=true; updateUI(); saveToAPI(); tg.showPopup({title:"Премиум активирован!",message:"Двойные награды!",buttons:[{type:"ok"}]}); closePremiumModal(); }); }
-    function showPremiumModal(){ document.getElementById('premiumModal').style.display='flex'; }
-    function closePremiumModal(){ document.getElementById('premiumModal').style.display='none'; }
-    function inviteFriend(){ tg.showPopup({title:"Пригласить друга",message:"Поделись ссылкой с другом!",buttons:[{type:"ok"}]}); }
-    function saveGame(){ const saveData={...player}; delete saveData.lastEnergyUpdate; localStorage.setItem(`koala_quest_${player.id}`,JSON.stringify(saveData)); }
-    async function loadGame(){ 
-        const apiLoaded = await loadFromAPI();
-        if (!apiLoaded) {
-            const saved = localStorage.getItem(`koala_quest_${player.id}`); 
-            if(saved){ 
-                const data=JSON.parse(saved); 
-                Object.assign(player,data); 
-                player.lastEnergyUpdate=Date.now(); 
+    function addExp(amount) { 
+        if(player.hasPremium) amount *= 2; 
+        player.exp += amount; 
+        while(player.exp >= player.expToNext) { 
+            player.exp -= player.expToNext; 
+            player.level++; 
+            player.expToNext = Math.floor(player.expToNext * 1.2); 
+            if(player.level % 10 === 0) player.tapPower += 0.5; 
+            tg.showPopup({ 
+                title: "🎉 УРОВЕНЬ ПОВЫШЕН!", 
+                message: `Уровень ${player.level}! Сила тапа: ${player.tapPower}`, 
+                buttons: [{ type: "ok" }] 
+            }); 
+            if(player.level >= 5 && !player.challenges.level5) checkChallenge('level5'); 
+            if(player.level >= 10 && !player.challenges.level10) checkChallenge('level10'); 
+        } 
+    }
+    
+    function checkTask(taskId) { 
+        if(!player.dailyTasks[taskId]) { 
+            player.dailyTasks[taskId] = true; 
+            let reward = { tap50: 100, tap100: 200, inviteFriend: 300, tournamentWin: 500 }[taskId]; 
+            if(player.hasPremium) reward *= 2; 
+            player.leaves += reward; 
+            tg.showPopup({ title: "✅ Задание выполнено!", message: `+${reward} 🍃`, buttons: [{ type: "ok" }] }); 
+            updateUI(); 
+            savePlayerData(); 
+        } 
+    }
+    
+    function checkChallenge(challengeId) { 
+        if(!player.challenges[challengeId]) { 
+            player.challenges[challengeId] = true; 
+            let reward = { level5: 500, level10: 1000, totalTaps1000: 500, tournamentChampion: 1000 }[challengeId]; 
+            if(player.hasPremium) reward *= 2; 
+            player.leaves += reward; 
+            if(challengeId === 'tournamentChampion') player.stars += 20; 
+            tg.showPopup({ title: "🏆 Челлендж завершен!", message: `+${reward} 🍃`, buttons: [{ type: "ok" }] }); 
+            updateUI(); 
+            savePlayerData(); 
+        } 
+    }
+    
+    function claimDaily() { 
+        const today = new Date().toDateString(); 
+        if(player.lastDailyClaim === today) { 
+            tg.showPopup({ title: "Уже получено!", message: "Завтра снова!", buttons: [{ type: "ok" }] }); 
+            return; 
+        } 
+        let bonus = 100 * player.dailyStreak; 
+        if(player.hasPremium) bonus *= 2; 
+        player.leaves += bonus; 
+        player.dailyStreak++; 
+        player.lastDailyClaim = today; 
+        tg.showPopup({ 
+            title: "🎁 Ежедневный бонус!", 
+            message: `+${bonus} 🍃\nСтрик: ${player.dailyStreak}`, 
+            buttons: [{ type: "ok" }] 
+        }); 
+        updateUI(); 
+        savePlayerData(); 
+    }
+    
+    function buyWithLeaves(item, price, callback) { 
+        if(player.leaves >= price) { 
+            player.leaves -= price; 
+            callback(); 
+            updateUI(); 
+            savePlayerData(); 
+            return true; 
+        } else { 
+            tg.showPopup({ title: "Не хватает листьев!", message: `Нужно ${price} 🍃`, buttons: [{ type: "ok" }] }); 
+            return false; 
+        } 
+    }
+    
+    function buyWithStars(item, price, callback) { 
+        tg.showPopup({ 
+            title: "Покупка за Stars", 
+            message: `Купить за ${price} ⭐?`, 
+            buttons: [
+                { id: "buy", type: "default", text: "Купить" }, 
+                { id: "cancel", type: "cancel", text: "Отмена" }
+            ] 
+        }, (buttonId) => { 
+            if(buttonId === "buy") { 
+                tg.showPopup({ title: "Оплата", message: "Открывается платёж...", buttons: [{ type: "ok" }] }); 
+                callback(); 
             } 
+        }); 
+    }
+    
+    function buyEnergy() { 
+        let missingEnergy = player.maxEnergy - player.energy; 
+        let price = Math.ceil(missingEnergy * 0.5); 
+        if(price <= 0) { 
+            tg.showPopup({ title: "Энергия полна!", message: "У тебя уже полная энергия", buttons: [{ type: "ok" }] }); 
+            return; 
+        } 
+        buyWithLeaves("energy", price, () => { 
+            player.energy = player.maxEnergy; 
+            updateEnergy(); 
+            tg.showPopup({ title: "Успех!", message: `Энергия восстановлена за ${price} 🍃!`, buttons: [{ type: "ok" }] }); 
+        }); 
+    }
+    
+    function buyTapUpgrade() { 
+        let price = Math.floor(100 * player.tapPower); 
+        buyWithLeaves("tapUpgrade", price, () => { 
+            player.tapPower++; 
+            tg.showPopup({ title: "Улучшение!", message: `Сила тапа +1 (теперь ${player.tapPower})`, buttons: [{ type: "ok" }] }); 
+        }); 
+    }
+    
+    function buyDoubleTapBoost() { 
+        buyWithStars("doubleTap", 49, () => { 
+            player.boosts.doubleTap.active = true; 
+            player.boosts.doubleTap.endTime = Date.now() + 3600000; 
+            updateUI(); 
+            savePlayerData(); 
+            tg.showPopup({ title: "Буст активирован!", message: "Двойной тап на 1 час!", buttons: [{ type: "ok" }] }); 
+        }); 
+    }
+    
+    function buyAutoTapBoost() { 
+        buyWithStars("autoTap", 99, () => { 
+            player.boosts.autoTap.active = true; 
+            player.boosts.autoTap.endTime = Date.now() + 86400000; 
+            updateUI(); 
+            savePlayerData(); 
+            tg.showPopup({ title: "Буст активирован!", message: "Авто-тап на 24 часа!", buttons: [{ type: "ok" }] }); 
+        }); 
+    }
+    
+    function buyEnergyBoost() { 
+        buyWithStars("energyBoost", 79, () => { 
+            player.boosts.energyBoost.active = true; 
+            player.boosts.energyBoost.endTime = Date.now() + 43200000; 
+            updateUI(); 
+            savePlayerData(); 
+            tg.showPopup({ title: "Буст активирован!", message: "Ускоренная регенерация на 12ч", buttons: [{ type: "ok" }] }); 
+        }); 
+    }
+    
+    function buyPremium() { 
+        buyWithStars("premium", 299, () => { 
+            player.hasPremium = true; 
+            updateUI(); 
+            savePlayerData(); 
+            tg.showPopup({ title: "Премиум активирован!", message: "Двойные награды!", buttons: [{ type: "ok" }] }); 
+            closePremiumModal(); 
+        }); 
+    }
+    
+    function showPremiumModal() { 
+        document.getElementById('premiumModal').style.display = 'flex'; 
+    }
+    
+    function closePremiumModal() { 
+        document.getElementById('premiumModal').style.display = 'none'; 
+    }
+    
+    function inviteFriend() { 
+        tg.showPopup({ title: "Пригласить друга", message: "Поделись ссылкой с другом!", buttons: [{ type: "ok" }] }); 
+    }
+    
+    async function loadGame() { 
+        const loaded = await loadPlayerData();
+        if (!loaded) {
+            console.log('🆕 Регистрация нового игрока');
+            await fetch(`/api/player/register?user_id=${player.id}&name=${encodeURIComponent(player.name)}`, { method: 'POST' });
         }
         loadTournamentData(); 
         updateLeaderboard(); 
         updateUI(); 
     }
-    function updateLeaderboard(){ let leaderboard=[{name:"🐨 KoalaKing",level:42,leaves:150000},{name:"🐨 EucalyptusPro",level:38,leaves:98000},{name:"🐨 SleepyMaster",level:35,leaves:87000},{name:player.name,level:player.level,leaves:player.totalLeaves,isMe:true}].sort((a,b)=>b.level-a.level); const listDiv=document.getElementById('leaderboardList'); if(listDiv) listDiv.innerHTML=leaderboard.map((user,idx)=>`<div class="leaderboard-item" style="${user.isMe?'background:rgba(255,215,0,0.25); border-radius:20px;':''}"><div class="rank">${idx+1}</div><div style="flex:1;">${user.name} ${user.isMe?'(Вы)':''}</div><div>🏆 Ур.${user.level}</div></div>`).join(''); }
-    function updateUI(){ 
-        document.getElementById('username').innerHTML=player.name; document.getElementById('levelText').innerHTML=`LVL ${player.level}`; 
-        document.getElementById('leaves').innerHTML=Math.floor(player.leaves); document.getElementById('stars').innerHTML=player.stars; 
-        document.getElementById('currentLevel').innerHTML=player.level; document.getElementById('currentExp').innerHTML=Math.floor(player.exp); document.getElementById('nextExp').innerHTML=player.expToNext; 
-        document.getElementById('expFill').style.width=`${(player.exp/player.expToNext)*100}%`; 
-        document.getElementById('totalLeaves').innerHTML=Math.floor(player.totalLeaves); document.getElementById('totalTaps').innerHTML=player.totalTaps; document.getElementById('battlesWon').innerHTML=player.battlesWon; 
-        document.getElementById('dailyStreak').innerHTML=player.dailyStreak; document.getElementById('dailyBonus').innerHTML=100*player.dailyStreak; 
-        document.getElementById('hasPremium').innerHTML=player.hasPremium?"✅ АКТИВЕН":"❌"; 
-        document.getElementById('refEarnings').innerHTML=Math.floor(player.refEarnings); 
-        updateTasksUI(); updateShopUI(); updateBoostsUI(); updateEnergy(); updateLeaderboard(); updateTournamentUI(); 
-        let claimBtn = document.getElementById('claimDaily'); if(claimBtn) { if(player.lastDailyClaim === new Date().toDateString()) claimBtn.classList.add('btn-completed'); else claimBtn.classList.remove('btn-completed'); }
-        saveGame(); 
-    }
-    function updateTasksUI(){ 
-        const dailyGrid=document.getElementById('dailyTasksGrid'); if(dailyGrid) dailyGrid.innerHTML=`<div class="task-item"><div class="task-icon">👆</div><div class="task-name">Сделать 50 тапов</div><div class="task-reward">+100 🍃</div><button class="btn ${player.dailyTasks.tap50?'btn-completed':''}" ${player.dailyTasks.tap50?'disabled':''} onclick="checkTask('tap50')">${player.dailyTasks.tap50?'✅ Выполнено':'Выполнить'}</button></div><div class="task-item"><div class="task-icon">👆👆</div><div class="task-name">Сделать 100 тапов</div><div class="task-reward">+200 🍃</div><button class="btn ${player.dailyTasks.tap100?'btn-completed':''}" ${player.dailyTasks.tap100?'disabled':''} onclick="checkTask('tap100')">${player.dailyTasks.tap100?'✅ Выполнено':'Выполнить'}</button></div><div class="task-item"><div class="task-icon">👥</div><div class="task-name">Пригласить друга</div><div class="task-reward">+300 🍃</div><button class="btn ${player.dailyTasks.inviteFriend?'btn-completed':''}" ${player.dailyTasks.inviteFriend?'disabled':''} onclick="checkTask('inviteFriend')">${player.dailyTasks.inviteFriend?'✅ Выполнено':'Выполнить'}</button></div><div class="task-item"><div class="task-icon">🏆</div><div class="task-name">Победить в турнире</div><div class="task-reward">+500 🍃</div><button class="btn ${player.dailyTasks.tournamentWin?'btn-completed':''}" ${player.dailyTasks.tournamentWin?'disabled':''} onclick="checkTask('tournamentWin')">${player.dailyTasks.tournamentWin?'✅ Выполнено':'Выполнить'}</button></div>`; 
-        const challengesGrid=document.getElementById('challengesGrid'); if(challengesGrid) challengesGrid.innerHTML=`<div class="task-item"><div class="task-icon">🎋</div><div class="task-name">Достичь 5 уровня</div><div class="task-reward">+500 🍃</div><button class="btn ${player.challenges.level5?'btn-completed':''}" disabled>${player.challenges.level5?'✅ Выполнено':player.level>=5?'🏆 Забрать!':`${player.level}/5`}</button></div><div class="task-item"><div class="task-icon">🎋🎋</div><div class="task-name">Достичь 10 уровня</div><div class="task-reward">+1000 🍃</div><button class="btn ${player.challenges.level10?'btn-completed':''}" disabled>${player.challenges.level10?'✅ Выполнено':player.level>=10?'🏆 Забрать!':`${player.level}/10`}</button></div><div class="task-item"><div class="task-icon">👆🔥</div><div class="task-name">1000 тапов всего</div><div class="task-reward">+500 🍃</div><button class="btn ${player.challenges.totalTaps1000?'btn-completed':''}" disabled>${player.challenges.totalTaps1000?'✅ Выполнено':`${player.totalTaps}/1000`}</button></div><div class="task-item"><div class="task-icon">🏆🏆</div><div class="task-name">Чемпион турнира</div><div class="task-reward">+1000🍃 +20⭐</div><button class="btn ${player.challenges.tournamentChampion?'btn-completed':''}" disabled>${player.challenges.tournamentChampion?'✅ Выполнено':'🏆'}</button></div>`; 
-    }
-    function updateShopUI(){ 
-        const coinShop=document.getElementById('coinShop'); if(coinShop){ let missingEnergy = player.maxEnergy - player.energy; let energyPrice = Math.ceil(missingEnergy * 0.5); coinShop.innerHTML=`<div class="shop-item"><div class="shop-icon">🔋</div><div class="shop-name">Восстановить энергию</div><div class="shop-desc">Восстановить ${missingEnergy} ед.</div><div class="shop-price ${player.leaves < energyPrice ? 'shop-price-disabled' : ''}" onclick="buyEnergy()">${energyPrice} 🍃</div></div><div class="shop-item"><div class="shop-icon">💪</div><div class="shop-name">Улучшить тап</div><div class="shop-desc">+1 🍃 за тап</div><div class="shop-price" onclick="buyTapUpgrade()">${Math.floor(100*player.tapPower)} 🍃</div></div><div class="shop-item"><div class="shop-icon">⚡</div><div class="shop-name">Макс. энергия +50</div><div class="shop-desc">Навсегда</div><div class="shop-price" onclick="buyWithLeaves('maxEnergy',500,()=>{ player.maxEnergy+=50; updateUI(); })">500 🍃</div></div>`; }
-        const starShop=document.getElementById('starShop'); if(starShop) starShop.innerHTML=`<div class="shop-item"><div class="shop-icon">✨</div><div class="shop-name">Двойной тап</div><div class="shop-desc">x2 за тап (1 час)</div><div class="shop-price shop-price-star" onclick="buyDoubleTapBoost()">49 ⭐</div></div><div class="shop-item"><div class="shop-icon">🤖</div><div class="shop-name">Авто-тап</div><div class="shop-desc">Автоматический тап (24ч)</div><div class="shop-price shop-price-star" onclick="buyAutoTapBoost()">99 ⭐</div></div><div class="shop-item"><div class="shop-icon">⚡⚡</div><div class="shop-name">Ускоренная энергия</div><div class="shop-desc">x2 регенерация (12ч)</div><div class="shop-price shop-price-star" onclick="buyEnergyBoost()">79 ⭐</div></div>`; 
-        const boostsGrid=document.getElementById('boostsGrid'); if(boostsGrid) boostsGrid.innerHTML=`<div class="shop-item"><div class="shop-icon">✨</div><div class="shop-name">Двойной тап</div><div class="shop-desc">x2 листья за тап (1ч)</div><div class="shop-price shop-price-star" onclick="buyDoubleTapBoost()">49 ⭐</div></div><div class="shop-item"><div class="shop-icon">🤖</div><div class="shop-name">Авто-тап</div><div class="shop-desc">Тапает сам (24ч)</div><div class="shop-price shop-price-star" onclick="buyAutoTapBoost()">99 ⭐</div></div><div class="shop-item"><div class="shop-icon">⚡⚡</div><div class="shop-name">Ускоренная энергия</div><div class="shop-desc">x2 регенерация (12ч)</div><div class="shop-price shop-price-star" onclick="buyEnergyBoost()">79 ⭐</div></div>`; 
-    }
-    function updateBoostsUI(){ const activeDiv=document.getElementById('activeBoosts'); let html=''; const now=Date.now(); if(player.boosts.doubleTap.active && now<player.boosts.doubleTap.endTime) html+=`<div>✨ Двойной тап: ${Math.ceil((player.boosts.doubleTap.endTime-now)/60000)} мин</div>`; if(player.boosts.autoTap.active && now<player.boosts.autoTap.endTime) html+=`<div>🤖 Авто-тап: ${Math.ceil((player.boosts.autoTap.endTime-now)/3600000)} ч</div>`; if(player.boosts.energyBoost.active && now<player.boosts.energyBoost.endTime) html+=`<div>⚡ Ускоренная энергия: ${Math.ceil((player.boosts.energyBoost.endTime-now)/3600000)} ч</div>`; if(!html) html='<div style="opacity:0.5;">Нет активных бустов</div>'; activeDiv.innerHTML=html; }
-    setInterval(()=>{ if(player.boosts.autoTap.active && Date.now()<player.boosts.autoTap.endTime && player.energy>=1) tap(); updateEnergy(); updateUI(); },1000);
     
-    document.querySelectorAll('.tab-btn').forEach(btn => { btn.addEventListener('click', () => { document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); document.querySelectorAll('.panel').forEach(p => p.classList.remove('active')); document.getElementById(`${btn.dataset.tab}-panel`).classList.add('active'); }); });
+    function updateLeaderboard() { 
+        let leaderboard = [
+            { name: "🐨 KoalaKing", level: 42, leaves: 150000 }, 
+            { name: "🐨 EucalyptusPro", level: 38, leaves: 98000 }, 
+            { name: "🐨 SleepyMaster", level: 35, leaves: 87000 }, 
+            { name: player.name, level: player.level, leaves: player.totalLeaves, isMe: true }
+        ].sort((a, b) => b.level - a.level); 
+        const listDiv = document.getElementById('leaderboardList'); 
+        if(listDiv) {
+            listDiv.innerHTML = leaderboard.map((user, idx) => 
+                `<div class="leaderboard-item" style="${user.isMe ? 'background:rgba(255,215,0,0.25); border-radius:20px;' : ''}">
+                    <div class="rank">${idx + 1}</div>
+                    <div style="flex:1;">${user.name} ${user.isMe ? '(Вы)' : ''}</div>
+                    <div>🏆 Ур.${user.level}</div>
+                </div>`
+            ).join(''); 
+        }
+    }
+    
+    function updateUI() { 
+        document.getElementById('username').innerHTML = player.name; 
+        document.getElementById('levelText').innerHTML = `LVL ${player.level}`; 
+        document.getElementById('leaves').innerHTML = Math.floor(player.leaves); 
+        document.getElementById('stars').innerHTML = player.stars; 
+        document.getElementById('currentLevel').innerHTML = player.level; 
+        document.getElementById('currentExp').innerHTML = Math.floor(player.exp); 
+        document.getElementById('nextExp').innerHTML = player.expToNext; 
+        document.getElementById('expFill').style.width = `${(player.exp / player.expToNext) * 100}%`; 
+        document.getElementById('totalLeaves').innerHTML = Math.floor(player.totalLeaves); 
+        document.getElementById('totalTaps').innerHTML = player.totalTaps; 
+        document.getElementById('battlesWon').innerHTML = player.battlesWon; 
+        document.getElementById('dailyStreak').innerHTML = player.dailyStreak; 
+        document.getElementById('dailyBonus').innerHTML = 100 * player.dailyStreak; 
+        document.getElementById('hasPremium').innerHTML = player.hasPremium ? "✅ АКТИВЕН" : "❌"; 
+        document.getElementById('refEarnings').innerHTML = Math.floor(player.refEarnings); 
+        updateTasksUI(); 
+        updateShopUI(); 
+        updateBoostsUI(); 
+        updateEnergy(); 
+        updateLeaderboard(); 
+        updateTournamentUI(); 
+        let claimBtn = document.getElementById('claimDaily'); 
+        if(claimBtn) { 
+            if(player.lastDailyClaim === new Date().toDateString()) {
+                claimBtn.classList.add('btn-completed'); 
+            } else {
+                claimBtn.classList.remove('btn-completed'); 
+            }
+        }
+    }
+    
+    function updateTasksUI() { 
+        const dailyGrid = document.getElementById('dailyTasksGrid'); 
+        if(dailyGrid) {
+            dailyGrid.innerHTML = `
+                <div class="task-item"><div class="task-icon">👆</div><div class="task-name">Сделать 50 тапов</div><div class="task-reward">+100 🍃</div><button class="btn ${player.dailyTasks.tap50 ? 'btn-completed' : ''}" ${player.dailyTasks.tap50 ? 'disabled' : ''} onclick="checkTask('tap50')">${player.dailyTasks.tap50 ? '✅ Выполнено' : 'Выполнить'}</button></div>
+                <div class="task-item"><div class="task-icon">👆👆</div><div class="task-name">Сделать 100 тапов</div><div class="task-reward">+200 🍃</div><button class="btn ${player.dailyTasks.tap100 ? 'btn-completed' : ''}" ${player.dailyTasks.tap100 ? 'disabled' : ''} onclick="checkTask('tap100')">${player.dailyTasks.tap100 ? '✅ Выполнено' : 'Выполнить'}</button></div>
+                <div class="task-item"><div class="task-icon">👥</div><div class="task-name">Пригласить друга</div><div class="task-reward">+300 🍃</div><button class="btn ${player.dailyTasks.inviteFriend ? 'btn-completed' : ''}" ${player.dailyTasks.inviteFriend ? 'disabled' : ''} onclick="checkTask('inviteFriend')">${player.dailyTasks.inviteFriend ? '✅ Выполнено' : 'Выполнить'}</button></div>
+                <div class="task-item"><div class="task-icon">🏆</div><div class="task-name">Победить в турнире</div><div class="task-reward">+500 🍃</div><button class="btn ${player.dailyTasks.tournamentWin ? 'btn-completed' : ''}" ${player.dailyTasks.tournamentWin ? 'disabled' : ''} onclick="checkTask('tournamentWin')">${player.dailyTasks.tournamentWin ? '✅ Выполнено' : 'Выполнить'}</button></div>
+            `; 
+        }
+        const challengesGrid = document.getElementById('challengesGrid'); 
+        if(challengesGrid) {
+            challengesGrid.innerHTML = `
+                <div class="task-item"><div class="task-icon">🎋</div><div class="task-name">Достичь 5 уровня</div><div class="task-reward">+500 🍃</div><button class="btn ${player.challenges.level5 ? 'btn-completed' : ''}" disabled>${player.challenges.level5 ? '✅ Выполнено' : player.level >= 5 ? '🏆 Забрать!' : `${player.level}/5`}</button></div>
+                <div class="task-item"><div class="task-icon">🎋🎋</div><div class="task-name">Достичь 10 уровня</div><div class="task-reward">+1000 🍃</div><button class="btn ${player.challenges.level10 ? 'btn-completed' : ''}" disabled>${player.challenges.level10 ? '✅ Выполнено' : player.level >= 10 ? '🏆 Забрать!' : `${player.level}/10`}</button></div>
+                <div class="task-item"><div class="task-icon">👆🔥</div><div class="task-name">1000 тапов всего</div><div class="task-reward">+500 🍃</div><button class="btn ${player.challenges.totalTaps1000 ? 'btn-completed' : ''}" disabled>${player.challenges.totalTaps1000 ? '✅ Выполнено' : `${player.totalTaps}/1000`}</button></div>
+                <div class="task-item"><div class="task-icon">🏆🏆</div><div class="task-name">Чемпион турнира</div><div class="task-reward">+1000🍃 +20⭐</div><button class="btn ${player.challenges.tournamentChampion ? 'btn-completed' : ''}" disabled>${player.challenges.tournamentChampion ? '✅ Выполнено' : '🏆'}</button></div>
+            `; 
+        }
+    }
+    
+    function updateShopUI() { 
+        const coinShop = document.getElementById('coinShop'); 
+        if(coinShop) { 
+            let missingEnergy = player.maxEnergy - player.energy; 
+            let energyPrice = Math.ceil(missingEnergy * 0.5); 
+            coinShop.innerHTML = `
+                <div class="shop-item"><div class="shop-icon">🔋</div><div class="shop-name">Восстановить энергию</div><div class="shop-desc">Восстановить ${missingEnergy} ед.</div><div class="shop-price ${player.leaves < energyPrice ? 'shop-price-disabled' : ''}" onclick="buyEnergy()">${energyPrice} 🍃</div></div>
+                <div class="shop-item"><div class="shop-icon">💪</div><div class="shop-name">Улучшить тап</div><div class="shop-desc">+1 🍃 за тап</div><div class="shop-price" onclick="buyTapUpgrade()">${Math.floor(100 * player.tapPower)} 🍃</div></div>
+                <div class="shop-item"><div class="shop-icon">⚡</div><div class="shop-name">Макс. энергия +50</div><div class="shop-desc">Навсегда</div><div class="shop-price" onclick="buyWithLeaves('maxEnergy', 500, () => { player.maxEnergy += 50; updateUI(); })">500 🍃</div></div>
+            `; 
+        }
+        const starShop = document.getElementById('starShop'); 
+        if(starShop) {
+            starShop.innerHTML = `
+                <div class="shop-item"><div class="shop-icon">✨</div><div class="shop-name">Двойной тап</div><div class="shop-desc">x2 за тап (1 час)</div><div class="shop-price shop-price-star" onclick="buyDoubleTapBoost()">49 ⭐</div></div>
+                <div class="shop-item"><div class="shop-icon">🤖</div><div class="shop-name">Авто-тап</div><div class="shop-desc">Автоматический тап (24ч)</div><div class="shop-price shop-price-star" onclick="buyAutoTapBoost()">99 ⭐</div></div>
+                <div class="shop-item"><div class="shop-icon">⚡⚡</div><div class="shop-name">Ускоренная энергия</div><div class="shop-desc">x2 регенерация (12ч)</div><div class="shop-price shop-price-star" onclick="buyEnergyBoost()">79 ⭐</div></div>
+            `; 
+        }
+        const boostsGrid = document.getElementById('boostsGrid'); 
+        if(boostsGrid) {
+            boostsGrid.innerHTML = `
+                <div class="shop-item"><div class="shop-icon">✨</div><div class="shop-name">Двойной тап</div><div class="shop-desc">x2 листья за тап (1ч)</div><div class="shop-price shop-price-star" onclick="buyDoubleTapBoost()">49 ⭐</div></div>
+                <div class="shop-item"><div class="shop-icon">🤖</div><div class="shop-name">Авто-тап</div><div class="shop-desc">Тапает сам (24ч)</div><div class="shop-price shop-price-star" onclick="buyAutoTapBoost()">99 ⭐</div></div>
+                <div class="shop-item"><div class="shop-icon">⚡⚡</div><div class="shop-name">Ускоренная энергия</div><div class="shop-desc">x2 регенерация (12ч)</div><div class="shop-price shop-price-star" onclick="buyEnergyBoost()">79 ⭐</div></div>
+            `; 
+        }
+    }
+    
+    function updateBoostsUI() { 
+        const activeDiv = document.getElementById('activeBoosts'); 
+        let html = ''; 
+        const now = Date.now(); 
+        if(player.boosts.doubleTap.active && now < player.boosts.doubleTap.endTime) {
+            html += `<div>✨ Двойной тап: ${Math.ceil((player.boosts.doubleTap.endTime - now) / 60000)} мин</div>`; 
+        }
+        if(player.boosts.autoTap.active && now < player.boosts.autoTap.endTime) {
+            html += `<div>🤖 Авто-тап: ${Math.ceil((player.boosts.autoTap.endTime - now) / 3600000)} ч</div>`; 
+        }
+        if(player.boosts.energyBoost.active && now < player.boosts.energyBoost.endTime) {
+            html += `<div>⚡ Ускоренная энергия: ${Math.ceil((player.boosts.energyBoost.endTime - now) / 3600000)} ч</div>`; 
+        }
+        if(!html) html = '<div style="opacity:0.5;">Нет активных бустов</div>'; 
+        activeDiv.innerHTML = html; 
+    }
+    
+    // Автосохранение каждые 5 секунд
+    setInterval(() => {
+        if(player.id && player.id > 1000000) {
+            savePlayerData();
+            console.log('🔄 Автосохранение');
+        }
+    }, 5000);
+    
+    // Сохранение при закрытии
+    window.addEventListener('beforeunload', () => {
+        if(player.id && player.id > 1000000) {
+            savePlayerData();
+        }
+    });
+    
+    setInterval(() => { 
+        if(player.boosts.autoTap.active && Date.now() < player.boosts.autoTap.endTime && player.energy >= 1) tap(); 
+        updateEnergy(); 
+        updateUI(); 
+    }, 1000);
+    
+    document.querySelectorAll('.tab-btn').forEach(btn => { 
+        btn.addEventListener('click', () => { 
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active')); 
+            btn.classList.add('active'); 
+            document.querySelectorAll('.panel').forEach(p => p.classList.remove('active')); 
+            document.getElementById(`${btn.dataset.tab}-panel`).classList.add('active'); 
+        }); 
+    });
+    
     document.getElementById('koalaTap').addEventListener('click', tap);
     document.getElementById('claimDaily').addEventListener('click', claimDaily);
     document.getElementById('inviteFriendBtn').addEventListener('click', inviteFriend);
     document.getElementById('tournamentJoinBtn').addEventListener('click', startTournament);
-    window.closePremiumModal=closePremiumModal; window.showPremiumModal=showPremiumModal; window.checkTask=checkTask; window.checkChallenge=checkChallenge; window.buyEnergy=buyEnergy; window.buyTapUpgrade=buyTapUpgrade; window.buyDoubleTapBoost=buyDoubleTapBoost; window.buyAutoTapBoost=buyAutoTapBoost; window.buyEnergyBoost=buyEnergyBoost; window.buyPremium=buyPremium; window.buyWithLeaves=buyWithLeaves;
+    
+    window.closePremiumModal = closePremiumModal; 
+    window.showPremiumModal = showPremiumModal; 
+    window.checkTask = checkTask; 
+    window.checkChallenge = checkChallenge; 
+    window.buyEnergy = buyEnergy; 
+    window.buyTapUpgrade = buyTapUpgrade; 
+    window.buyDoubleTapBoost = buyDoubleTapBoost; 
+    window.buyAutoTapBoost = buyAutoTapBoost; 
+    window.buyEnergyBoost = buyEnergyBoost; 
+    window.buyPremium = buyPremium; 
+    window.buyWithLeaves = buyWithLeaves;
     
     // ==================== ЗАПУСК ИГРЫ ====================
     (async () => {
-        // Инициализируем Telegram пользователя ПЕРЕД загрузкой игры
         const userData = await initTelegramUser();
         player.id = userData.id;
         player.name = userData.name;
@@ -574,7 +1113,7 @@
         updateUI();
         updateProgress();
         
-        console.log('✅ Игра запущена! Данные сохраняются через API');
+        console.log('✅ Игра запущена! Данные сохраняются в CloudStorage + API');
     })();
 </script>
 </body>
