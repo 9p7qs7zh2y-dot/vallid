@@ -336,7 +336,7 @@
         
         console.warn('⚠️ Гостевой режим');
         return {
-            id: Math.floor(Math.random() * 1000000),
+            id: Math.floor(Math.random() * 900000) + 100000,
             name: "Гость"
         };
     }
@@ -470,8 +470,30 @@
                 await savePlayerData();
                 return true;
             } else if (response.status === 404) {
-                await fetch(`/api/player/register?user_id=${player.id}&name=${encodeURIComponent(player.name)}`, { method: 'POST' });
-                console.log('✅ Новый игрок зарегистрирован');
+                // Проверяем что ID валидный перед регистрацией
+                if (!player.id || player.id < 1000000 || isNaN(player.id)) {
+                    console.error('❌ Некорректный ID для регистрации:', player.id);
+                    return false;
+                }
+                
+                // Отправляем POST с JSON
+                try {
+                    const registerResponse = await fetch('/api/player/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            user_id: parseInt(player.id),
+                            name: String(player.name || 'Игрок')
+                        })
+                    });
+                    
+                    if (registerResponse.ok) {
+                        console.log('✅ Новый игрок зарегистрирован через JSON');
+                        return true;
+                    }
+                } catch (e) {
+                    console.error('❌ Ошибка регистрации:', e);
+                }
                 return true;
             }
         } catch(e) {
@@ -929,7 +951,24 @@
         const loaded = await loadPlayerData();
         if (!loaded) {
             console.log('🆕 Регистрация нового игрока');
-            await fetch(`/api/player/register?user_id=${player.id}&name=${encodeURIComponent(player.name)}`, { method: 'POST' });
+            
+            if (player.id && !isNaN(player.id) && player.id > 1000000) {
+                try {
+                    await fetch('/api/player/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            user_id: parseInt(player.id),
+                            name: String(player.name || 'Игрок')
+                        })
+                    });
+                    console.log('✅ Игрок зарегистрирован');
+                } catch (e) {
+                    console.error('❌ Ошибка регистрации:', e);
+                }
+            } else {
+                console.error('❌ Невозможно зарегистрировать: невалидный ID', player.id);
+            }
         }
         loadTournamentData(); 
         updateLeaderboard(); 
@@ -1104,8 +1143,17 @@
     // ==================== ЗАПУСК ИГРЫ ====================
     (async () => {
         const userData = await initTelegramUser();
-        player.id = userData.id;
-        player.name = userData.name;
+        
+        // Проверяем что получили нормальные данные
+        if (userData && userData.id && !isNaN(userData.id)) {
+            player.id = parseInt(userData.id);
+            player.name = String(userData.name || 'Игрок');
+            console.log('✅ Игрок инициализирован:', player.id, player.name);
+        } else {
+            console.error('❌ Некорректные данные пользователя:', userData);
+            player.id = Math.floor(Math.random() * 900000) + 100000;
+            player.name = 'Гость';
+        }
         
         console.log('🎮 Запуск игры для пользователя:', player.id, player.name);
         
