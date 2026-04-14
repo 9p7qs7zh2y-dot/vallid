@@ -130,7 +130,6 @@
 </div>
 
 <div class="app-container" id="gameContainer" style="display: none;">
-    <!-- ВЕСЬ HTML ОСТАЛСЯ БЕЗ ИЗМЕНЕНИЙ -->
     <div class="header">
         <div class="user-info">
             <div class="user-avatar" id="avatar">🐨</div>
@@ -268,7 +267,7 @@
         }
     }
 
-    // ==================== TELEGRAM - ПРАВИЛЬНАЯ ИНИЦИАЛИЗАЦИЯ ====================
+    // ==================== TELEGRAM - ПРАВИЛЬНАЯ ИНИЦИАЛИЗАЦИЯ (БЕЗ CLOUDSTORAGE) ====================
     const tg = window.Telegram.WebApp;
     
     async function initTelegramUser() {
@@ -276,6 +275,7 @@
         tg.expand();
         
         console.log('🔄 Инициализация Telegram WebApp...');
+        console.log('🔵 initDataUnsafe:', tg.initDataUnsafe);
         
         // Ждем initData с таймаутом
         const user = await new Promise((resolve) => {
@@ -287,7 +287,7 @@
             
             console.log('⏳ Ожидание initData...');
             let attempts = 0;
-            const maxAttempts = 50; // 5 секунд
+            const maxAttempts = 50;
             
             const checkInterval = setInterval(() => {
                 attempts++;
@@ -310,37 +310,29 @@
             
             console.log('✅ Telegram ID:', userId, 'Name:', userName);
             
-            // Сохраняем ID как строку
-            try {
-                await tg.CloudStorage.setItem('cached_user_id', String(userId));
-                await tg.CloudStorage.setItem('cached_user_name', String(userName));
-                console.log('💾 ID сохранен в CloudStorage');
-            } catch (e) {
-                console.log('⚠️ CloudStorage недоступен:', e);
-            }
+            // Сохраняем в localStorage
+            localStorage.setItem('cached_user_id', String(userId));
+            localStorage.setItem('cached_user_name', String(userName));
+            console.log('💾 ID сохранен в localStorage');
             
             return {
                 id: userId,
-                name: (userId === 1384094331) ? "Vadim" : userName
+                name: userName
             };
         }
         
-        // Фолбек - пробуем CloudStorage
-        try {
-            const cachedId = await tg.CloudStorage.getItem('cached_user_id');
-            const cachedName = await tg.CloudStorage.getItem('cached_user_name');
-            
-            console.log('🔍 CloudStorage вернул:', cachedId, cachedName);
-            
-            if (cachedId && cachedId !== 'undefined' && cachedId !== 'null') {
-                console.log('📦 Используем кешированного пользователя:', cachedId);
-                return {
-                    id: parseInt(cachedId),
-                    name: cachedName || "Игрок"
-                };
-            }
-        } catch (e) {
-            console.log('⚠️ Не удалось прочитать CloudStorage:', e);
+        // Фолбек - localStorage
+        const cachedId = localStorage.getItem('cached_user_id');
+        const cachedName = localStorage.getItem('cached_user_name');
+        
+        console.log('🔍 localStorage вернул:', cachedId, cachedName);
+        
+        if (cachedId && cachedId !== 'undefined' && cachedId !== 'null') {
+            console.log('📦 Используем кешированного пользователя:', cachedId);
+            return {
+                id: parseInt(cachedId),
+                name: cachedName || "Игрок"
+            };
         }
         
         // Совсем фолбек - гость
@@ -569,7 +561,8 @@
     (async () => {
         const userData = await initTelegramUser();
         
-        // Проверяем что id - число
+        console.log('🔵 userData получен:', userData);
+        
         if (userData && userData.id && typeof userData.id === 'number' && !isNaN(userData.id)) {
             player.id = userData.id;
             player.name = String(userData.name || 'Игрок');
