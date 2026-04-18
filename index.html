@@ -286,6 +286,27 @@
 <div class="modal" id="premiumModal"><div class="modal-content"><h3>🐨 Премиум</h3><div class="premium-features"><ul><li>✨ <strong>ДВОЙНЫЕ НАГРАДЫ</strong></li><li>⚡ <strong>БЫСТРАЯ ЭНЕРГИЯ</strong></li><li>🎁 <strong>ЭКСКЛЮЗИВНЫЕ ЗАДАНИЯ</strong></li><li>👑 <strong>УНИКАЛЬНЫЙ СКИН</strong></li></ul></div><button class="btn-star" onclick="buyPremium()">⭐ Купить за 299 звезд</button><button class="btn-secondary" style="margin-top:10px;" onclick="closePremiumModal()">Закрыть</button></div></div>
 
 <script>
+    // ==================== ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ КЕША ====================
+    const APP_VERSION = '2.0.4'; // Меняй это число при каждом обновлении игры!
+    const storedVersion = localStorage.getItem('koala_app_version');
+    
+    if (storedVersion !== APP_VERSION) {
+        console.log(`🔄 Обновление с версии ${storedVersion} до ${APP_VERSION}. Очистка кеша...`);
+        
+        // Очищаем все данные старого кеша
+        if ('caches' in window) {
+            caches.keys().then(names => {
+                names.forEach(name => caches.delete(name));
+            });
+        }
+        
+        // Сохраняем новую версию
+        localStorage.setItem('koala_app_version', APP_VERSION);
+        
+        // Принудительно перезагружаем страницу без кеша
+        window.location.reload(true);
+    }
+
     // ==================== ЭКРАН ЗАГРУЗКИ ====================
     const progressBar = document.getElementById('progressBar');
     const percentText = document.getElementById('percentText');
