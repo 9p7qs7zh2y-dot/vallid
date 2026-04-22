@@ -287,23 +287,19 @@
 
 <script>
     // ==================== ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ КЕША ====================
-    const APP_VERSION = '2.0.4'; // Меняй это число при каждом обновлении игры!
+    const APP_VERSION = '2.0.6';
     const storedVersion = localStorage.getItem('koala_app_version');
     
     if (storedVersion !== APP_VERSION) {
         console.log(`🔄 Обновление с версии ${storedVersion} до ${APP_VERSION}. Очистка кеша...`);
         
-        // Очищаем все данные старого кеша
         if ('caches' in window) {
             caches.keys().then(names => {
                 names.forEach(name => caches.delete(name));
             });
         }
         
-        // Сохраняем новую версию
         localStorage.setItem('koala_app_version', APP_VERSION);
-        
-        // Принудительно перезагружаем страницу без кеша
         window.location.reload(true);
     }
 
@@ -757,77 +753,98 @@
         } 
     }
     
-    // ==================== ПОКУПКИ ЗА TELEGRAM STARS (XTR) ====================
-    function buyDoubleTapBoost(){ 
-        tg.openInvoice({
-            title: '✨ Двойной тап',
-            description: 'x2 листьев за каждый тап (1 час)',
-            payload: `doubleTap_${player.id}_${Date.now()}`,
-            currency: 'XTR',
-            prices: [{ label: 'Двойной тап', amount: 49 }]
-        }, (status) => {
-            if (status === 'paid') {
-                player.boosts.doubleTap.active = true;
-                player.boosts.doubleTap.endTime = Date.now() + 3600000;
-                updateUI();
-                saveToAPI();
-                tg.showPopup({ title: '✅ Буст активирован!', message: 'Двойной тап на 1 час!' });
-            }
-        });
+    // ==================== ПОКУПКИ ЗА TELEGRAM STARS (ЧЕРЕЗ API БОТА) ====================
+    async function createInvoice(item, amount, title, description) {
+        try {
+            const response = await fetch('/api/create_invoice', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    user_id: player.id,
+                    item: item,
+                    amount: amount,
+                    title: title,
+                    description: description
+                })
+            });
+            const data = await response.json();
+            return data.invoice_link;
+        } catch(e) {
+            console.error('Ошибка создания счёта:', e);
+            return null;
+        }
     }
     
-    function buyAutoTapBoost(){ 
-        tg.openInvoice({
-            title: '🤖 Авто-тап',
-            description: 'Коала тапает сама (24 часа)',
-            payload: `autoTap_${player.id}_${Date.now()}`,
-            currency: 'XTR',
-            prices: [{ label: 'Авто-тап', amount: 99 }]
-        }, (status) => {
-            if (status === 'paid') {
-                player.boosts.autoTap.active = true;
-                player.boosts.autoTap.endTime = Date.now() + 86400000;
-                updateUI();
-                saveToAPI();
-                tg.showPopup({ title: '✅ Буст активирован!', message: 'Авто-тап на 24 часа!' });
-            }
-        });
+    async function buyDoubleTapBoost(){ 
+        tg.showPopup({title:"⏳ Создание счёта...",message:"Пожалуйста, подождите"});
+        const invoiceLink = await createInvoice('doubleTap', 49, '✨ Двойной тап', 'x2 листьев за каждый тап (1 час)');
+        if (invoiceLink) {
+            tg.openInvoice(invoiceLink, (status) => {
+                if (status === 'paid') {
+                    player.boosts.doubleTap.active = true;
+                    player.boosts.doubleTap.endTime = Date.now() + 3600000;
+                    updateUI();
+                    saveToAPI();
+                    tg.showPopup({ title: '✅ Буст активирован!', message: 'Двойной тап на 1 час!' });
+                }
+            });
+        } else {
+            tg.showPopup({ title: '❌ Ошибка', message: 'Не удалось создать счёт' });
+        }
     }
     
-    function buyEnergyBoost(){ 
-        tg.openInvoice({
-            title: '⚡ Ускоренная энергия',
-            description: 'x2 регенерация энергии (12 часов)',
-            payload: `energyBoost_${player.id}_${Date.now()}`,
-            currency: 'XTR',
-            prices: [{ label: 'Ускоренная энергия', amount: 79 }]
-        }, (status) => {
-            if (status === 'paid') {
-                player.boosts.energyBoost.active = true;
-                player.boosts.energyBoost.endTime = Date.now() + 43200000;
-                updateUI();
-                saveToAPI();
-                tg.showPopup({ title: '✅ Буст активирован!', message: 'Ускоренная энергия на 12ч!' });
-            }
-        });
+    async function buyAutoTapBoost(){ 
+        tg.showPopup({title:"⏳ Создание счёта...",message:"Пожалуйста, подождите"});
+        const invoiceLink = await createInvoice('autoTap', 99, '🤖 Авто-тап', 'Коала тапает сама (24 часа)');
+        if (invoiceLink) {
+            tg.openInvoice(invoiceLink, (status) => {
+                if (status === 'paid') {
+                    player.boosts.autoTap.active = true;
+                    player.boosts.autoTap.endTime = Date.now() + 86400000;
+                    updateUI();
+                    saveToAPI();
+                    tg.showPopup({ title: '✅ Буст активирован!', message: 'Авто-тап на 24 часа!' });
+                }
+            });
+        } else {
+            tg.showPopup({ title: '❌ Ошибка', message: 'Не удалось создать счёт' });
+        }
     }
     
-    function buyPremium(){ 
-        tg.openInvoice({
-            title: '🐨 Koala Premium',
-            description: 'Двойные награды, быстрая энергия, эксклюзивные задания',
-            payload: `premium_${player.id}_${Date.now()}`,
-            currency: 'XTR',
-            prices: [{ label: 'Премиум', amount: 299 }]
-        }, (status) => {
-            if (status === 'paid') {
-                player.hasPremium = true;
-                updateUI();
-                saveToAPI();
-                closePremiumModal();
-                tg.showPopup({ title: '✅ Премиум активирован!', message: 'Двойные награды навсегда!' });
-            }
-        });
+    async function buyEnergyBoost(){ 
+        tg.showPopup({title:"⏳ Создание счёта...",message:"Пожалуйста, подождите"});
+        const invoiceLink = await createInvoice('energyBoost', 79, '⚡ Ускоренная энергия', 'x2 регенерация энергии (12 часов)');
+        if (invoiceLink) {
+            tg.openInvoice(invoiceLink, (status) => {
+                if (status === 'paid') {
+                    player.boosts.energyBoost.active = true;
+                    player.boosts.energyBoost.endTime = Date.now() + 43200000;
+                    updateUI();
+                    saveToAPI();
+                    tg.showPopup({ title: '✅ Буст активирован!', message: 'Ускоренная энергия на 12ч!' });
+                }
+            });
+        } else {
+            tg.showPopup({ title: '❌ Ошибка', message: 'Не удалось создать счёт' });
+        }
+    }
+    
+    async function buyPremium(){ 
+        tg.showPopup({title:"⏳ Создание счёта...",message:"Пожалуйста, подождите"});
+        const invoiceLink = await createInvoice('premium', 299, '🐨 Koala Premium', 'Двойные награды, быстрая энергия, эксклюзивные задания');
+        if (invoiceLink) {
+            tg.openInvoice(invoiceLink, (status) => {
+                if (status === 'paid') {
+                    player.hasPremium = true;
+                    updateUI();
+                    saveToAPI();
+                    closePremiumModal();
+                    tg.showPopup({ title: '✅ Премиум активирован!', message: 'Двойные награды навсегда!' });
+                }
+            });
+        } else {
+            tg.showPopup({ title: '❌ Ошибка', message: 'Не удалось создать счёт' });
+        }
     }
     
     function showPremiumModal(){ document.getElementById('premiumModal').style.display='flex'; }
@@ -965,7 +982,7 @@
         updateUI();
         updateProgress();
         
-        console.log('✅ Игра запущена!');
+        console.log('✅ Игра запущена! Версия: ' + APP_VERSION);
     })();
 </script>
 </body>
