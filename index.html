@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Koala Quest — Турнир тапов!</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- НОВЫЙ SDK -->
+    <script src="https://unpkg.com/@telegram-apps/sdk@latest/dist/sdk.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
         .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: url('https://i.ibb.co/84mbBWZW/d5d1fb9d-5bf1-4239-875b-76c4f226a13f.webp') no-repeat center center; background-size: cover; background-position: center center; z-index: 10000; display: flex; justify-content: center; align-items: center; transition: opacity 0.6s ease, visibility 0.6s ease; }
@@ -287,7 +288,7 @@
 
 <script>
     // ==================== ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ КЕША ====================
-    const APP_VERSION = '2.0.9';  // ← ВЕРСИЯ ОБНОВЛЕНА
+    const APP_VERSION = '2.1.0';  // ВЕРСИЯ ОБНОВЛЕНА
     const storedVersion = localStorage.getItem('koala_app_version');
     
     if (storedVersion !== APP_VERSION) {
@@ -307,6 +308,47 @@
     const API_BASE = 'https://koala-bot.onrender.com';
     const BOT_USERNAME = 'ZoomTapi_Bot';
 
+    // ==================== ИНИЦИАЛИЗАЦИЯ НОВОГО SDK ====================
+    const { init, invoice, backButton, mainButton, popup, utils } = window['@telegram-apps/sdk'];
+    
+    // Инициализируем SDK
+    init();
+    
+    // Для совместимости со старым кодом
+    const tg = {
+        ready: () => {},
+        expand: () => {},
+        initDataUnsafe: window.Telegram?.WebApp?.initDataUnsafe || {},
+        showPopup: (options, callback) => {
+            if (popup) {
+                popup.open({
+                    title: options.title,
+                    message: options.message,
+                    buttons: options.buttons || [{ type: 'ok' }]
+                }).then((buttonId) => {
+                    if (callback) callback(buttonId);
+                });
+            } else {
+                alert(options.message);
+                if (callback) callback('ok');
+            }
+        },
+        openTelegramLink: (url) => {
+            window.open(url, '_blank');
+        },
+        openInvoice: (url, callback) => {
+            // Fallback на случай, если новый SDK не загрузился
+            if (invoice && invoice.openUrl.isSupported()) {
+                invoice.openUrl(url).then(status => {
+                    callback(status);
+                });
+            } else {
+                window.open(url, '_blank');
+                callback('failed');
+            }
+        }
+    };
+
     // ==================== ЭКРАН ЗАГРУЗКИ ====================
     const progressBar = document.getElementById('progressBar');
     const percentText = document.getElementById('percentText');
@@ -325,24 +367,27 @@
     }
 
     // ==================== TELEGRAM ИНИЦИАЛИЗАЦИЯ ====================
-    const tg = window.Telegram.WebApp;
-    
     async function initTelegramUser() {
-        tg.ready();
-        tg.expand();
+        const webApp = window.Telegram?.WebApp;
+        if (webApp) {
+            webApp.ready();
+            webApp.expand();
+        }
         
         const user = await new Promise((resolve) => {
-            if (tg.initDataUnsafe?.user) {
-                resolve(tg.initDataUnsafe.user);
+            const webAppUser = webApp?.initDataUnsafe?.user;
+            if (webAppUser) {
+                resolve(webAppUser);
                 return;
             }
             let attempts = 0;
             const maxAttempts = 50;
             const checkInterval = setInterval(() => {
                 attempts++;
-                if (tg.initDataUnsafe?.user) {
+                const user = window.Telegram?.WebApp?.initDataUnsafe?.user;
+                if (user) {
                     clearInterval(checkInterval);
-                    resolve(tg.initDataUnsafe.user);
+                    resolve(user);
                 } else if (attempts >= maxAttempts) {
                     clearInterval(checkInterval);
                     resolve(null);
@@ -774,7 +819,7 @@
         } 
     }
     
-    // ==================== ПОКУПКИ ЗА TELEGRAM STARS (ЧЕРЕЗ API БОТА) ====================
+    // ==================== ПОКУПКИ ЗА TELEGRAM STARS (НОВЫЙ SDK) ====================
     async function createInvoice(item, amount, title, description) {
         try {
             const response = await fetch(`${API_BASE}/api/create_invoice`, {
@@ -789,6 +834,7 @@
                 })
             });
             const data = await response.json();
+            console.log('🔗 Invoice link from API:', data.invoice_link);
             if (!data.invoice_link) {
                 console.error('Нет invoice_link в ответе:', data);
                 return null;
@@ -800,84 +846,95 @@
         }
     }
     
-    async function buyDoubleTapBoost(){ 
-        const invoiceLink = await createInvoice('doubleTap', 49, '✨ Двойной тап', 'x2 листьев за каждый тап (1 час)');
-        if (invoiceLink) {
-            tg.openInvoice(invoiceLink, (status) => {
-                if (status === 'paid') {
-                    player.boosts.doubleTap.active = true;
-                    player.boosts.doubleTap.endTime = Date.now() + 3600000;
-                    updateUI();
-                    saveToAPI();
-                    notifyBot('doubleTap', 49);
-                    tg.showPopup({ title: '✅ Буст активирован!', message: 'Двойной тап на 1 час!' });
-                } else if (status === 'failed') {
-                    tg.showPopup({ title: '❌ Ошибка', message: 'Платёж не прошёл.' });
-                }
-            });
-        } else {
+    // Универсальная функция оплаты через новый SDK
+    async function processPayment(item, amount, title, description, successCallback) {
+        const invoiceLink = await createInvoice(item, amount, title, description);
+        if (!invoiceLink) {
             tg.showPopup({ title: '❌ Ошибка', message: 'Не удалось создать счёт' });
+            return;
         }
+        
+        try {
+            // Проверяем поддержку нового метода
+            if (invoice && invoice.openUrl.isSupported()) {
+                console.log('✅ Используем новый SDK для открытия инвойса');
+                const status = await invoice.openUrl(invoiceLink);
+                console.log('📊 Статус оплаты:', status);
+                
+                if (status === 'paid') {
+                    successCallback();
+                    notifyBot(item, amount);
+                    return;
+                } else if (status === 'failed') {
+                    tg.showPopup({ title: '❌ Ошибка', message: 'Платёж не прошёл. Попробуйте снова.' });
+                    return;
+                } else {
+                    tg.showPopup({ title: 'ℹ️ Оплата', message: 'Оплата отменена или ожидается.' });
+                    return;
+                }
+            } else {
+                // Fallback на старый метод
+                console.log('⚠️ Старый SDK, используем openInvoice');
+                tg.openInvoice(invoiceLink, (status) => {
+                    if (status === 'paid') {
+                        successCallback();
+                        notifyBot(item, amount);
+                    } else if (status === 'failed') {
+                        tg.showPopup({ title: '❌ Ошибка', message: 'Платёж не прошёл.' });
+                    }
+                });
+            }
+        } catch(e) {
+            console.error('Ошибка открытия инвойса:', e);
+            
+            // Если ничего не сработало - открываем в чат
+            tg.openTelegramLink(invoiceLink);
+            tg.showPopup({
+                title: '💫 Оплата',
+                message: 'Оплатите счёт в чате с ботом, затем вернитесь в игру!',
+                buttons: [{ type: 'ok' }]
+            });
+        }
+    }
+    
+    async function buyDoubleTapBoost(){ 
+        await processPayment('doubleTap', 49, '✨ Двойной тап', 'x2 листьев за каждый тап (1 час)', () => {
+            player.boosts.doubleTap.active = true;
+            player.boosts.doubleTap.endTime = Date.now() + 3600000;
+            updateUI();
+            saveToAPI();
+            tg.showPopup({ title: '✅ Буст активирован!', message: 'Двойной тап на 1 час!' });
+        });
     }
     
     async function buyAutoTapBoost(){ 
-        const invoiceLink = await createInvoice('autoTap', 99, '🤖 Авто-тап', 'Коала тапает сама (24 часа)');
-        if (invoiceLink) {
-            tg.openInvoice(invoiceLink, (status) => {
-                if (status === 'paid') {
-                    player.boosts.autoTap.active = true;
-                    player.boosts.autoTap.endTime = Date.now() + 86400000;
-                    updateUI();
-                    saveToAPI();
-                    notifyBot('autoTap', 99);
-                    tg.showPopup({ title: '✅ Буст активирован!', message: 'Авто-тап на 24 часа!' });
-                } else if (status === 'failed') {
-                    tg.showPopup({ title: '❌ Ошибка', message: 'Платёж не прошёл.' });
-                }
-            });
-        } else {
-            tg.showPopup({ title: '❌ Ошибка', message: 'Не удалось создать счёт' });
-        }
+        await processPayment('autoTap', 99, '🤖 Авто-тап', 'Коала тапает сама (24 часа)', () => {
+            player.boosts.autoTap.active = true;
+            player.boosts.autoTap.endTime = Date.now() + 86400000;
+            updateUI();
+            saveToAPI();
+            tg.showPopup({ title: '✅ Буст активирован!', message: 'Авто-тап на 24 часа!' });
+        });
     }
     
     async function buyEnergyBoost(){ 
-        const invoiceLink = await createInvoice('energyBoost', 79, '⚡ Ускоренная энергия', 'x2 регенерация энергии (12 часов)');
-        if (invoiceLink) {
-            tg.openInvoice(invoiceLink, (status) => {
-                if (status === 'paid') {
-                    player.boosts.energyBoost.active = true;
-                    player.boosts.energyBoost.endTime = Date.now() + 43200000;
-                    updateUI();
-                    saveToAPI();
-                    notifyBot('energyBoost', 79);
-                    tg.showPopup({ title: '✅ Буст активирован!', message: 'Ускоренная энергия на 12ч!' });
-                } else if (status === 'failed') {
-                    tg.showPopup({ title: '❌ Ошибка', message: 'Платёж не прошёл.' });
-                }
-            });
-        } else {
-            tg.showPopup({ title: '❌ Ошибка', message: 'Не удалось создать счёт' });
-        }
+        await processPayment('energyBoost', 79, '⚡ Ускоренная энергия', 'x2 регенерация энергии (12 часов)', () => {
+            player.boosts.energyBoost.active = true;
+            player.boosts.energyBoost.endTime = Date.now() + 43200000;
+            updateUI();
+            saveToAPI();
+            tg.showPopup({ title: '✅ Буст активирован!', message: 'Ускоренная энергия на 12ч!' });
+        });
     }
     
     async function buyPremium(){ 
-        const invoiceLink = await createInvoice('premium', 299, '🐨 Koala Premium', 'Двойные награды, быстрая энергия, эксклюзивные задания');
-        if (invoiceLink) {
-            tg.openInvoice(invoiceLink, (status) => {
-                if (status === 'paid') {
-                    player.hasPremium = true;
-                    updateUI();
-                    saveToAPI();
-                    closePremiumModal();
-                    notifyBot('premium', 299);
-                    tg.showPopup({ title: '✅ Премиум активирован!', message: 'Двойные награды навсегда!' });
-                } else if (status === 'failed') {
-                    tg.showPopup({ title: '❌ Ошибка', message: 'Платёж не прошёл.' });
-                }
-            });
-        } else {
-            tg.showPopup({ title: '❌ Ошибка', message: 'Не удалось создать счёт' });
-        }
+        await processPayment('premium', 299, '🐨 Koala Premium', 'Двойные награды, быстрая энергия, эксклюзивные задания', () => {
+            player.hasPremium = true;
+            updateUI();
+            saveToAPI();
+            closePremiumModal();
+            tg.showPopup({ title: '✅ Премиум активирован!', message: 'Двойные награды навсегда!' });
+        });
     }
     
     function showPremiumModal(){ document.getElementById('premiumModal').style.display='flex'; }
@@ -1016,6 +1073,7 @@
         updateProgress();
         
         console.log('✅ Игра запущена! Версия: ' + APP_VERSION);
+        console.log('📦 SDK версия:', window['@telegram-apps/sdk']?.version || 'неизвестно');
     })();
 </script>
 </body>
