@@ -287,7 +287,7 @@
 
 <script>
     // ==================== ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ КЕША ====================
-    const APP_VERSION = '2.0.6';
+    const APP_VERSION = '2.0.7';  // ← ВЕРСИЯ ОБНОВЛЕНА
     const storedVersion = localStorage.getItem('koala_app_version');
     
     if (storedVersion !== APP_VERSION) {
@@ -302,6 +302,9 @@
         localStorage.setItem('koala_app_version', APP_VERSION);
         window.location.reload(true);
     }
+
+    // ==================== КОНСТАНТА API ====================
+    const API_BASE = 'https://koala-bot.onrender.com';  // ← ССЫЛКА НА БОТА
 
     // ==================== ЭКРАН ЗАГРУЗКИ ====================
     const progressBar = document.getElementById('progressBar');
@@ -393,7 +396,7 @@
     async function saveToAPI() {
         if (!player.id || player.id < 1000000) return;
         try {
-            await fetch('/api/player/save', {
+            await fetch(`${API_BASE}/api/player/save`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -416,7 +419,7 @@
     async function loadFromAPI() {
         if (!player.id) return false;
         try {
-            const response = await fetch(`/api/player/${player.id}`);
+            const response = await fetch(`${API_BASE}/api/player/${player.id}`);
             if (response.ok) {
                 const data = await response.json();
                 player.leaves = data.leaves || 500;
@@ -440,7 +443,7 @@
                 player.lastEnergyUpdate = Date.now();
                 return true;
             } else if (response.status === 404) {
-                await fetch(`/api/player/register?user_id=${player.id}&name=${encodeURIComponent(player.name)}`, { method: 'POST' });
+                await fetch(`${API_BASE}/api/player/register?user_id=${player.id}&name=${encodeURIComponent(player.name)}`, { method: 'POST' });
                 return true;
             }
         } catch(e) { console.log('⚠️ API не доступен'); }
@@ -449,7 +452,7 @@
     
     async function loadTournamentParticipants() {
         try {
-            const response = await fetch('/api/tournament/participants');
+            const response = await fetch(`${API_BASE}/api/tournament/participants`);
             if (response.ok) {
                 const data = await response.json();
                 tournament.participants = data;
@@ -459,7 +462,7 @@
     
     async function saveTournamentParticipant() {
         try {
-            await fetch('/api/tournament/save', {
+            await fetch(`${API_BASE}/api/tournament/save`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -756,7 +759,7 @@
     // ==================== ПОКУПКИ ЗА TELEGRAM STARS (ЧЕРЕЗ API БОТА) ====================
     async function createInvoice(item, amount, title, description) {
         try {
-            const response = await fetch('/api/create_invoice', {
+            const response = await fetch(`${API_BASE}/api/create_invoice`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
