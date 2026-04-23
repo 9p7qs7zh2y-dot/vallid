@@ -1,4 +1,4 @@
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
@@ -287,7 +287,7 @@
 
 <script>
     // ==================== ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ КЕША ====================
-    const APP_VERSION = '2.0.9';  // ← ВЕРСИЯ ОБНОВЛЕНА
+    const APP_VERSION = '2.1.0';  // ← ВЕРСИЯ ОБНОВЛЕНА
     const storedVersion = localStorage.getItem('koala_app_version');
     
     if (storedVersion !== APP_VERSION) {
@@ -774,7 +774,7 @@
         } 
     }
     
-    // ==================== ПОКУПКИ ЗА TELEGRAM STARS (ЧЕРЕЗ API БОТА) ====================
+    // ==================== ПОКУПКИ ЗА TELEGRAM STARS (НОВЫЙ КОД) ====================
     async function createInvoice(item, amount, title, description) {
         try {
             const response = await fetch(`${API_BASE}/api/create_invoice`, {
@@ -789,6 +789,7 @@
                 })
             });
             const data = await response.json();
+            console.log('🔗 Invoice link:', data.invoice_link);
             if (!data.invoice_link) {
                 console.error('Нет invoice_link в ответе:', data);
                 return null;
@@ -799,82 +800,123 @@
             return null;
         }
     }
-    
+
+    // Сохраняем ожидающую покупку
+    function setPendingPurchase(item, amount) {
+        localStorage.setItem('pending_purchase', JSON.stringify({
+            item: item,
+            amount: amount,
+            timestamp: Date.now()
+        }));
+    }
+
+    // Проверяем и активируем ожидающую покупку
+    function checkPendingPurchase() {
+        const pending = localStorage.getItem('pending_purchase');
+        if (!pending) return;
+        
+        try {
+            const data = JSON.parse(pending);
+            const elapsed = Date.now() - data.timestamp;
+            
+            if (elapsed > 3000 && elapsed < 120000) {
+                activatePurchase(data.item);
+                localStorage.removeItem('pending_purchase');
+            } else if (elapsed >= 120000) {
+                localStorage.removeItem('pending_purchase');
+            }
+        } catch(e) {
+            localStorage.removeItem('pending_purchase');
+        }
+    }
+
+    // Активируем покупку
+    function activatePurchase(item) {
+        if (item === 'doubleTap') {
+            player.boosts.doubleTap.active = true;
+            player.boosts.doubleTap.endTime = Date.now() + 3600000;
+            updateUI();
+            saveToAPI();
+            notifyBot('doubleTap', 49);
+            tg.showPopup({ title: '✅ Буст активирован!', message: 'Двойной тап на 1 час!' });
+        } else if (item === 'autoTap') {
+            player.boosts.autoTap.active = true;
+            player.boosts.autoTap.endTime = Date.now() + 86400000;
+            updateUI();
+            saveToAPI();
+            notifyBot('autoTap', 99);
+            tg.showPopup({ title: '✅ Буст активирован!', message: 'Авто-тап на 24 часа!' });
+        } else if (item === 'energyBoost') {
+            player.boosts.energyBoost.active = true;
+            player.boosts.energyBoost.endTime = Date.now() + 43200000;
+            updateUI();
+            saveToAPI();
+            notifyBot('energyBoost', 79);
+            tg.showPopup({ title: '✅ Буст активирован!', message: 'Ускоренная энергия на 12ч!' });
+        } else if (item === 'premium') {
+            player.hasPremium = true;
+            updateUI();
+            saveToAPI();
+            closePremiumModal();
+            notifyBot('premium', 299);
+            tg.showPopup({ title: '✅ Премиум активирован!', message: 'Двойные награды навсегда!' });
+        }
+    }
+
+    // Универсальная функция оплаты
+    function openPayment(item, amount, title, description, fallbackLink) {
+        try {
+            tg.openInvoice(fallbackLink, (status) => {
+                console.log('📊 Payment status:', status);
+                if (status === 'paid') {
+                    activatePurchase(item);
+                } else if (status === 'failed') {
+                    tg.showPopup({ title: '❌ Ошибка', message: 'Платёж не прошёл. Попробуйте снова.' });
+                }
+            });
+        } catch(e) {
+            console.error('❌ openInvoice не сработал:', e);
+            tg.openTelegramLink(fallbackLink);
+            setPendingPurchase(item, amount);
+            tg.showPopup({
+                title: '💫 Оплата Stars',
+                message: 'Нажмите "Оплатить" в чате с ботом, затем вернитесь в игру — покупка активируется автоматически!',
+                buttons: [{ type: 'ok' }]
+            });
+        }
+    }
+
     async function buyDoubleTapBoost(){ 
         const invoiceLink = await createInvoice('doubleTap', 49, '✨ Двойной тап', 'x2 листьев за каждый тап (1 час)');
         if (invoiceLink) {
-            tg.openInvoice(invoiceLink, (status) => {
-                if (status === 'paid') {
-                    player.boosts.doubleTap.active = true;
-                    player.boosts.doubleTap.endTime = Date.now() + 3600000;
-                    updateUI();
-                    saveToAPI();
-                    notifyBot('doubleTap', 49);
-                    tg.showPopup({ title: '✅ Буст активирован!', message: 'Двойной тап на 1 час!' });
-                } else if (status === 'failed') {
-                    tg.showPopup({ title: '❌ Ошибка', message: 'Платёж не прошёл.' });
-                }
-            });
+            openPayment('doubleTap', 49, '✨ Двойной тап', 'x2 листьев за каждый тап (1 час)', invoiceLink);
         } else {
             tg.showPopup({ title: '❌ Ошибка', message: 'Не удалось создать счёт' });
         }
     }
-    
+
     async function buyAutoTapBoost(){ 
         const invoiceLink = await createInvoice('autoTap', 99, '🤖 Авто-тап', 'Коала тапает сама (24 часа)');
         if (invoiceLink) {
-            tg.openInvoice(invoiceLink, (status) => {
-                if (status === 'paid') {
-                    player.boosts.autoTap.active = true;
-                    player.boosts.autoTap.endTime = Date.now() + 86400000;
-                    updateUI();
-                    saveToAPI();
-                    notifyBot('autoTap', 99);
-                    tg.showPopup({ title: '✅ Буст активирован!', message: 'Авто-тап на 24 часа!' });
-                } else if (status === 'failed') {
-                    tg.showPopup({ title: '❌ Ошибка', message: 'Платёж не прошёл.' });
-                }
-            });
+            openPayment('autoTap', 99, '🤖 Авто-тап', 'Коала тапает сама (24 часа)', invoiceLink);
         } else {
             tg.showPopup({ title: '❌ Ошибка', message: 'Не удалось создать счёт' });
         }
     }
-    
+
     async function buyEnergyBoost(){ 
         const invoiceLink = await createInvoice('energyBoost', 79, '⚡ Ускоренная энергия', 'x2 регенерация энергии (12 часов)');
         if (invoiceLink) {
-            tg.openInvoice(invoiceLink, (status) => {
-                if (status === 'paid') {
-                    player.boosts.energyBoost.active = true;
-                    player.boosts.energyBoost.endTime = Date.now() + 43200000;
-                    updateUI();
-                    saveToAPI();
-                    notifyBot('energyBoost', 79);
-                    tg.showPopup({ title: '✅ Буст активирован!', message: 'Ускоренная энергия на 12ч!' });
-                } else if (status === 'failed') {
-                    tg.showPopup({ title: '❌ Ошибка', message: 'Платёж не прошёл.' });
-                }
-            });
+            openPayment('energyBoost', 79, '⚡ Ускоренная энергия', 'x2 регенерация энергии (12 часов)', invoiceLink);
         } else {
             tg.showPopup({ title: '❌ Ошибка', message: 'Не удалось создать счёт' });
         }
     }
-    
+
     async function buyPremium(){ 
         const invoiceLink = await createInvoice('premium', 299, '🐨 Koala Premium', 'Двойные награды, быстрая энергия, эксклюзивные задания');
         if (invoiceLink) {
-            tg.openInvoice(invoiceLink, (status) => {
-                if (status === 'paid') {
-                    player.hasPremium = true;
-                    updateUI();
-                    saveToAPI();
-                    closePremiumModal();
-                    notifyBot('premium', 299);
-                    tg.showPopup({ title: '✅ Премиум активирован!', message: 'Двойные награды навсегда!' });
-                } else if (status === 'failed') {
-                    tg.showPopup({ title: '❌ Ошибка', message: 'Платёж не прошёл.' });
-                }
-            });
+            openPayment('premium', 299, '🐨 Koala Premium', 'Двойные награды, быстрая энергия, эксклюзивные задания', invoiceLink);
         } else {
             tg.showPopup({ title: '❌ Ошибка', message: 'Не удалось создать счёт' });
         }
@@ -921,7 +963,18 @@
         updateUI(); 
         updateDailyTimer();
         dailyTimerInterval = setInterval(updateDailyTimer, 1000);
+        
+        // Проверяем ожидающие покупки при загрузке
+        checkPendingPurchase();
     }
+    
+    // Проверка при возвращении в игру
+    document.addEventListener('visibilitychange', function() {
+        if (!document.hidden) {
+            setTimeout(checkPendingPurchase, 500);
+        }
+    });
+    
     function updateLeaderboard(){ 
         let leaderboard=[{name:"🐨 KoalaKing",level:42,leaves:150000,photo:null},{name:"🐨 EucalyptusPro",level:38,leaves:98000,photo:null},{name:"🐨 SleepyMaster",level:35,leaves:87000,photo:null},{name:player.name,level:player.level,leaves:player.totalLeaves,isMe:true,photo:player.photo}].sort((a,b)=>b.level-a.level); 
         const listDiv=document.getElementById('leaderboardList'); 
